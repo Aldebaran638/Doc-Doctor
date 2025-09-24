@@ -1,0 +1,22 @@
+{
+  "name": "libclang-test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "tree-sitter-cpp": "^0.23.4",
+    "typescript": "^5.9.2",
+    "web-tree-sitter": "^0.25.10"
+  },
+  "devDependencies": {
+    "@types/emscripten": "^1.41.2",
+    "@types/node": "^24.5.2"
+  }
+}
