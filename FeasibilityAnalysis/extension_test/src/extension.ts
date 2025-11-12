@@ -7,15 +7,10 @@ import { getAddress } from "./utils/getAddress";
 // 当你的扩展被激活时会调用此方法
 // 你的扩展在第一次执行命令时被激活
 export function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
   // 使用 console 输出诊断信息（console.log）和错误（console.error）
   // 这行代码只会在扩展被激活时执行一次
   console.log('Congratulations, your extension "helloworld" is now active!');
   vscode.window.showInformationMessage("Hello World from Doc-Doctor!");
-  // The command has been defined in the package.json file
-  // Now provide the implementation of the command with registerCommand
-  // The commandId parameter must match the command field in package.json
   // 该命令已在 package.json 文件中定义
   // 现在通过 registerCommand 实现该命令
   // commandId 参数必须与 package.json 中的 command 字段一致
