@@ -32,12 +32,17 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 // 'vscode' 模块包含 VS Code 扩展性 API
 // 导入该模块并在下面的代码中使用别名 vscode 引用它
 const vscode = __importStar(require("vscode"));
+const readDirectory_1 = __importDefault(require("./utiles/readDirectory"));
+const analyseFile_1 = __importDefault(require("./utiles/analyseFile"));
 // 当您的扩展被激活时调用此方法
 // 您的扩展在第一次执行命令时被激活
 function activate(context) {
@@ -53,37 +58,12 @@ function activate(context) {
         // 向用户显示消息框
         vscode.window.showInformationMessage("Hello World from test!");
     });
-    const disposable2 = vscode.commands.registerCommand("test.readDirectory", () => {
-        // 获取当前工作区文件夹
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            vscode.window.showErrorMessage("没有打开的工作区！");
-            return;
-        }
-        // 使用第一个工作区文件夹
-        const workspaceFolder = workspaceFolders[0];
-        console.log("搜索工作区中的 .c 文件...");
-        // 使用 findFiles 查找所有 .c 文件
-        vscode.workspace.findFiles("**/*.c", null).then((cFiles) => {
-            console.log(`找到 ${cFiles.length} 个 .c 文件:`);
-            if (cFiles.length === 0) {
-                vscode.window.showInformationMessage("工作区中没有找到 .c 文件");
-                return;
-            }
-            // 显示每个 .c 文件的相对路径
-            cFiles.forEach((fileUri) => {
-                const relativePath = vscode.workspace.asRelativePath(fileUri);
-                console.log(`- ${relativePath}`);
-            });
-            // 显示结果给用户
-            const fileList = cFiles
-                .map((fileUri) => vscode.workspace.asRelativePath(fileUri))
-                .join("\n");
-            vscode.window.showInformationMessage(`找到 ${cFiles.length} 个 .c 文件:\n${fileList}`, { modal: false });
-        });
-    });
+    // 读取项目中的所有.c文件
+    const disposable2 = vscode.commands.registerCommand("test.readDirectory", readDirectory_1.default);
+    const disposable3 = vscode.commands.registerCommand("test.analyseFile", (0, analyseFile_1.default)("../../../math_utils.c"));
     context.subscriptions.push(disposable);
     context.subscriptions.push(disposable2);
+    context.subscriptions.push(disposable3);
 }
 // 当您的扩展被停用时调用此方法
 function deactivate() { }

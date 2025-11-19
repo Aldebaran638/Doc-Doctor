@@ -20,8 +20,11 @@
       {
         "command": "test.readDirectory",
         "title": "Read Directory"
+      },
+      {
+        "command": "test.analyseFile",
+        "title": "Analyse File"
       }
-      
     ]
   },
   "scripts": {
@@ -33,13 +36,17 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.106.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.46.3",
+    "@types/vscode": "^1.106.1",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.1",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.46.3"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-c": "^0.23.4"
   }
 }

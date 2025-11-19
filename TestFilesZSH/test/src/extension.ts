@@ -2,8 +2,10 @@
 // 导入该模块并在下面的代码中使用别名 vscode 引用它
 import * as vscode from "vscode";
 import readDirectory from "./utiles/readDirectory";
+import analyseFile from "./utiles/analyseFile";
 // 当您的扩展被激活时调用此方法
 // 您的扩展在第一次执行命令时被激活
+
 export function activate(context: vscode.ExtensionContext) {
   // 使用控制台输出诊断信息 (console.log) 和错误信息 (console.error)
   // 这行代码只在扩展激活时执行一次
@@ -23,8 +25,14 @@ export function activate(context: vscode.ExtensionContext) {
     "test.readDirectory",
     readDirectory
   );
+  const disposable3 = vscode.commands.registerCommand(
+    "test.analyseFile",
+    analyseFile("../../../math_utils.c")
+  );
+
   context.subscriptions.push(disposable);
   context.subscriptions.push(disposable2);
+  context.subscriptions.push(disposable3);
 }
 
 // 当您的扩展被停用时调用此方法
