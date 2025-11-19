@@ -18,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 向用户显示消息框
     vscode.window.showInformationMessage("Hello World from test!");
   });
-
+  // 读取项目中的所有.c文件
   const disposable2 = vscode.commands.registerCommand(
     "test.readDirectory",
     () => {
@@ -36,6 +36,8 @@ export function activate(context: vscode.ExtensionContext) {
       console.log("搜索工作区中的 .c 文件...");
 
       // 使用 findFiles 查找所有 .c 文件
+      // findFiles函数返回的，也就是cFiles，是一个Thenable（即在异步编程中，“将来会得到一个结果的容器/占位符””）对象，最终解析为一个Uri数组
+      // findFiles函数是异步的
       vscode.workspace.findFiles("**/*.c", null).then((cFiles) => {
         console.log(`找到 ${cFiles.length} 个 .c 文件:`);
 
