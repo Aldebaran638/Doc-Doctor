@@ -25,6 +25,15 @@
         "command": "test.analyseFile",
         "title": "Analyse File"
       }
+      ,
+      {
+        "command": "test.jumpToPosition",
+        "title": "Jump To Position"
+      },
+      {
+        "command": "test.checkFunction",
+        "title": "Check Function"
+      }
     ]
   },
   "scripts": {

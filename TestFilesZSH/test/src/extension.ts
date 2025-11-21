@@ -3,6 +3,8 @@
 import * as vscode from "vscode";
 import readDirectory from "./utiles/readDirectory";
 import analyseFile from "./utiles/analyseFile";
+import jumpToPosition from "./utiles/jumpToPosition";
+import checkFunction from "./utiles/checkFunction";
 // 当您的扩展被激活时调用此方法
 // 您的扩展在第一次执行命令时被激活
 
@@ -29,10 +31,25 @@ export function activate(context: vscode.ExtensionContext) {
     "test.analyseFile",
     analyseFile("../../../math_utils.c")
   );
-
+  const disposable4 = vscode.commands.registerCommand(
+    "test.jumpToPosition",
+    () => jumpToPosition("../../../math_utils.c", 7, 4)
+  );
+  const disposable5 = vscode.commands.registerCommand(
+    "test.checkFunction",
+    async () => {
+      const mid = analyseFile("../../../math_utils.c");
+      const functionInfo = mid();
+      const issues = await checkFunction(functionInfo);
+      console.log("函数检查结果:", issues);
+    }
+  );
+  
   context.subscriptions.push(disposable);
   context.subscriptions.push(disposable2);
   context.subscriptions.push(disposable3);
+  context.subscriptions.push(disposable4);
+  context.subscriptions.push(disposable5);
 }
 
 // 当您的扩展被停用时调用此方法

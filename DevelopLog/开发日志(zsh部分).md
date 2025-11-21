@@ -26,6 +26,29 @@
 # 开发日志
 
 ## 2025/11/19
-添加了文件语法解析模块分析功能的功能测试。测试函数为analyseFiles.ts文件中的函数.输入文件名后,该函数能正确输出文件中所有函数的相关信息
+- 添加了文件语法解析模块分析功能的功能测试。测试函数为analyseFiles.ts文件中的函数.输入文件名后,该函数能正确输出文件中所有函数的相关信息
 
-版本问题:确定测试项目中VSCode版本,tree-sitter版本和tree-sitter-c版本
+- 版本问题:确定测试项目中VSCode版本,tree-sitter版本和tree-sitter-c版本.
+
+安装tree-sitter-c时,发现不论询问AI,还是自动使用npm自动安装最新版本,都出现了tree-sitter与安装的tree-sitter版本不兼容的问题.最好的解决方法是:
+由于tree-sitter-c的版本依赖于tree-sitter,而tree-sitter的版本则不依赖于任何库,所以可以先安装一个合适的(即有与其功能且稳定够用的)tree-sitter,再在tree-sitter项目下查询其package.json文件,查找与其适配的tree-sitter-c项目版本,最后指定npm安装指定版本即可.
+```shell
+npm install tree-sitter-c@<版本号>
+```
+
+
+
+## 2025/11/20
+优化仓库目录.现在仓库目录下的out,node_modules等文件夹都不再被跟踪
+
+在git仓库中,如果想让某个文件/文件夹被忽略,而该文件/文件夹又在之前的提交中被提交过,那么需要先使用
+```shell
+git rm -r --cached <file_or_folder>
+```
+指令取消仓库对该文件/文件夹的跟踪状态,然后再在.gitignore文件中忽略该文件
+
+## 2025/11/21
+
+- 添加了工作区跳转模块分析功能的功能测试.测试函数为jumpToPosition.ts文件中的函数.输入文件名,行号和列号后,该函数能正确跳转到指定位置
+
+- 
