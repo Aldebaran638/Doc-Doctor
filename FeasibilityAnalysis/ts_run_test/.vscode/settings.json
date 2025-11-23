@@ -1,6 +1,0 @@
-{
-  "code-runner.executorMap": {
-    "typescript": "node ./dist/$fileNameWithoutExt.js"
-  },
-  "code-runner.runInTerminal": true
-}
