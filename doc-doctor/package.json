@@ -11,7 +11,8 @@
   ],
   "activationEvents": [
     "onView:doc-doctor.sidebarView",
-    "onCommand:doc-doctor.helloWorld"
+    "onCommand:doc-doctor.helloWorld",
+    "onCommand:doc-doctor.checkSingleFile"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -19,6 +20,10 @@
       {
         "command": "doc-doctor.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "doc-doctor.checkSingleFile",
+        "title": "Doc-Doctor: 检查单个 C/C++ 文件"
       }
     ],
     "viewsContainers": {
@@ -34,7 +39,8 @@
       "doc-doctor-sidebar": [
         {
           "id": "doc-doctor.sidebarView",
-          "name": "doc-doctor"
+          "name": "doc-doctor",
+          "type": "webview"
         }
       ]
     }
