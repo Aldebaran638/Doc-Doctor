@@ -73,3 +73,4 @@ message(STATUS "SQLite3 include: ${SQLite3_INCLUDE_DIRS}")
 message(STATUS "Output directory: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
 
 
+

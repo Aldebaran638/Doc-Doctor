@@ -60,6 +60,8 @@ EXPORT int initDatabase(const char* dbPath) {
     if (rc != SQLITE_OK) {
         std::cerr << "[Doc-Doctor DB] Failed to create table: " << errMsg << std::endl;
         sqlite3_free(errMsg);
+        sqlite3_close(g_db);
+        g_db = nullptr;
         return -1;
     }
 
