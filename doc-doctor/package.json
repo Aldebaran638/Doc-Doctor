@@ -10,9 +10,6 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:doc-doctor.sidebarView",
-    "onCommand:doc-doctor.helloWorld",
-    "onCommand:doc-doctor.checkSingleFile"
   ],
   "main": "./out/extension.js",
   "contributes": {
