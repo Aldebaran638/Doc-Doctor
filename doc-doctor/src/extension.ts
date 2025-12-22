@@ -1,3 +1,36 @@
+// 注册侧边栏 WebviewViewProvider
+class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
+  public static readonly viewType = "doc-doctor.sidebarView";
+  constructor(private readonly _extensionUri: vscode.Uri) {}
+
+  resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ) {
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this._extensionUri],
+    };
+    // 空白内容
+    webviewView.webview.html = this.getHtmlForWebview();
+  }
+
+  private getHtmlForWebview(): string {
+    return `<!DOCTYPE html>
+      <html lang="zh-cn">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>doc-doctor</title>
+      </head>
+      <body>
+      </body>
+      </html>`;
+  }
+}
+
+
 // 模块 'vscode' 包含了 VS Code 的扩展 API
 // 导入该模块，并在下方代码中用 vscode 作为别名引用
 import * as vscode from "vscode";
@@ -22,6 +55,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+
+  // 注册侧边栏视图提供者
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      DocDoctorSidebarProvider.viewType,
+      new DocDoctorSidebarProvider(context.extensionUri)
+    )
+  );
 }
 
 // 当你的扩展被释放（deactivate）时会调用此方法

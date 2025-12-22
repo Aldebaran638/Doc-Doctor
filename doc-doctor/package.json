@@ -9,7 +9,10 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:doc-doctor.sidebarView",
+    "onCommand:doc-doctor.helloWorld"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -17,7 +20,24 @@
         "command": "doc-doctor.helloWorld",
         "title": "Hello World"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "doc-doctor-sidebar",
+          "title": "doc-doctor",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "doc-doctor-sidebar": [
+        {
+          "id": "doc-doctor.sidebarView",
+          "name": "doc-doctor"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
