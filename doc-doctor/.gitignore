@@ -1,5 +1,45 @@
-out
-dist
-node_modules
+# 编译输出
+out/
+dist/
+
+# 依赖
+node_modules/
+
+# VS Code 测试
 .vscode-test/
+
+# 打包产物
 *.vsix
+
+# C++ 编译产物（保留 DLL）
+native/build/*
+!native/build/.gitkeep
+!native/build/Release/
+native/build/Release/*
+!native/build/Release/*.dll
+
+# SQLite 数据库文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 工作区数据库目录
+.doc-doctor/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+npm-debug.log*
+
+# 临时文件
+*.tmp
+*.temp

@@ -1,71 +1,151 @@
-# doc-doctor README
+# Doc-Doctor
 
-This is the README for your extension "doc-doctor". After writing up a brief description, we recommend including the following sections.
+**Doc-Doctor** 是一个 VS Code 扩展，用于检查 C/C++ 项目中函数的 Doxygen 注释完整性。
 
-## Features
+## ✨ 功能特性
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- 🔍 **项目全量检查**：扫描工作区所有 `.c/.cpp` 文件，检测注释问题
+- 📄 **单文件检查**：选择单个文件进行解析和检查
+- 📋 **问题列表展示**：支持按类型筛选、关键词搜索
+- 🎯 **一键跳转**：点击问题卡片，自动跳转到对应代码位置
+- ✅ **状态管理**：标记问题为"已完成"，置底显示
+- 💾 **数据持久化**：使用 SQLite 数据库存储检查结果
+- ⚙️ **白名单配置**：支持配置文件/函数白名单（开发中）
 
-For example if there is an image subfolder under your extension project workspace:
+## 🔧 检测的问题类型
 
-\!\[feature X\]\(images/feature-x.png\)
+| 类型 | 说明 |
+|------|------|
+| 参数缺失 | 函数参数缺少 `@param` 说明 |
+| 返回值缺失 | 非 void 函数缺少 `@return` 说明 |
+| 说明缺失 | 函数缺少 `@brief` 功能描述 |
+| 变更警告 | 函数内容变更但注释未更新（规划中） |
+| 语法错误 | 文件存在语法错误，无法解析 |
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## 📦 安装
 
-## Requirements
+### 从源码安装
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+1. 克隆仓库：
+   ```bash
+   git clone <repository-url>
+   cd Doc-Doctor/doc-doctor
+   ```
 
-## Extension Settings
+2. 安装依赖：
+   ```bash
+   npm install
+   ```
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+3. 编译 C++ 数据库模块（可选，不编译则使用模拟数据）：
+   ```bash
+   # 需要安装 vcpkg 和相关依赖
+   cd native/build
+   cmake .. -DCMAKE_TOOLCHAIN_FILE=<vcpkg-path>/scripts/buildsystems/vcpkg.cmake
+   cmake --build . --config Release
+   ```
 
-For example:
+4. 编译 TypeScript：
+   ```bash
+   npm run compile
+   ```
 
-This extension contributes the following settings:
+5. 按 `F5` 启动调试
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+### 依赖说明
 
-## Known Issues
+**Node.js 依赖**（自动安装）：
+- `koffi` - FFI 库，用于调用 C++ 动态库
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+**C++ 依赖**（编译 DLL 时需要）：
+- SQLite3
+- nlohmann/json
 
-## Release Notes
+## 🚀 使用方法
 
-Users appreciate release notes as you update your extension.
+1. 打开 VS Code，在 Activity Bar 中点击 **Doc-Doctor** 图标
+2. 在侧边栏中：
+   - 点击 **"检查整个项目"** 扫描所有 C/C++ 文件
+   - 点击 **"检查单个文件"** 选择特定文件检查
+3. 查看问题列表：
+   - 使用搜索框过滤问题
+   - 使用下拉框按类型筛选
+   - 点击问题卡片跳转到代码位置
+   - 点击右上角 ○ 标记问题为已完成
 
-### 1.0.0
+## 📁 项目结构
 
-Initial release of ...
+```
+doc-doctor/
+├── src/
+│   ├── extension.ts          # 扩展入口
+│   └── modules/
+│       ├── fileCheck.ts      # 文件解析模块
+│       ├── functionCheck.ts  # 函数检查模块
+│       ├── projectCheck.ts   # 项目检查模块
+│       ├── jumpToLocation.ts # 跳转模块
+│       └── database.ts       # 数据库桥接层
+├── media/
+│   ├── sidebar.js            # 前端交互逻辑
+│   ├── toolkit.js            # VS Code Webview UI Toolkit
+│   └── icon.svg              # 扩展图标
+├── native/
+│   ├── src/
+│   │   ├── database.h        # C++ 头文件
+│   │   ├── database.cpp      # C++ 实现
+│   │   └── main.cpp          # 测试程序
+│   ├── CMakeLists.txt        # CMake 配置
+│   └── build/                # 编译输出
+└── package.json
+```
 
-### 1.0.1
+## ⚙️ 配置项（开发中）
 
-Fixed issue #.
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `doc-doctor.checkMainFunction` | boolean | false | 是否检查 main 函数 |
+| `doc-doctor.fileWhitelist` | string[] | [] | 文件白名单（支持目录） |
+| `doc-doctor.functionWhitelist` | string[] | [] | 函数白名单 |
 
-### 1.1.0
+## 🛠️ 开发
 
-Added features X, Y, and Z.
+### 编译
 
----
+```bash
+npm run compile   # 编译一次
+npm run watch     # 监听模式
+```
 
-## Following extension guidelines
+### 调试
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+1. 在 VS Code 中打开 `doc-doctor` 目录
+2. 按 `F5` 启动 Extension Development Host
+3. 在新窗口中测试扩展
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+### C++ 模块编译
 
-## Working with Markdown
+参见 [native/README.md](native/README.md)
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+## 📝 注释规范
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+本扩展检测 **Doxygen 风格** 的注释：
 
-## For more information
+```c
+/**
+ * @brief 计算两个整数的和
+ * @param a 第一个加数
+ * @param b 第二个加数
+ * @return 两数之和
+ */
+int add(int a, int b) {
+    return a + b;
+}
+```
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+## 🐛 已知问题
 
-**Enjoy!**
+- 暂不支持 C++ 模板函数的解析
+- 宏定义的函数可能无法正确识别
+- 匿名函数不在检查范围内
+
+
