@@ -45,7 +45,7 @@ export async function checkFile(uri: vscode.Uri): Promise<ParseResult> {
     };
   }
 
-  // 一个非常简单、近似的函数定义匹配（不追求完全正确，只用于最小可行演示）
+  // 解析函数定义并提取 Doxygen 注释
   const functions: FunctionInfo[] = [];
   const regex = /([\w\s\*]+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*\{/g;
   let match: RegExpExecArray | null;
@@ -61,6 +61,9 @@ export async function checkFile(uri: vscode.Uri): Promise<ParseResult> {
     const lineNumber = linesBefore.length;
     const columnNumber = linesBefore[linesBefore.length - 1].length + 1;
 
+    // 提取函数前面的 Doxygen 注释（向上查找最近的 /** ... */ 块）
+    const comment = extractCommentBeforeFunction(content, matchIndex);
+
     // 简单地将整行之后到第一个右花括号视为函数体片段（只用于展示）
     const rest = content.slice(matchIndex + fullMatch.length - 1);
     const endIndex = rest.indexOf("}");
@@ -70,7 +73,7 @@ export async function checkFile(uri: vscode.Uri): Promise<ParseResult> {
       filePath,
       functionName,
       functionSignature,
-      comment: "", // 暂不解析注释，后续可按 Doxygen 规则扩展
+      comment,
       functionContent: functionBody,
       lineNumber,
       columnNumber,
@@ -148,4 +151,34 @@ async function pickSingleCFile(): Promise<vscode.Uri | undefined> {
   }
 
   return result[0];
+}
+
+/**
+ * 提取函数定义前的 Doxygen 注释
+ * @param content 文件全部内容
+ * @param functionStartIndex 函数定义开始位置
+ * @returns 提取到的注释字符串，未找到则返回空字符串
+ */
+function extractCommentBeforeFunction(
+  content: string,
+  functionStartIndex: number
+): string {
+  const before = content.slice(0, functionStartIndex);
+  // 匹配最后一个 /** ... */ 或 /* ... */ 注释块
+  const commentRegex = /\/\*\*?([\s\S]*?)\*\//g;
+  let lastComment = "";
+  let match: RegExpExecArray | null;
+
+  while ((match = commentRegex.exec(before)) !== null) {
+    // 检查注释块与函数之间是否只有空白字符
+    const afterComment = before.slice(
+      match.index + match[0].length,
+      functionStartIndex
+    );
+    if (/^\s*$/.test(afterComment)) {
+      lastComment = match[0];
+    }
+  }
+
+  return lastComment.trim();
 }
