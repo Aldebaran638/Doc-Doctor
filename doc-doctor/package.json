@@ -1,6 +1,73 @@
 {
   "name": "doc-doctor",
   "displayName": "doc-doctor",
+  "description": "文档医生",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:doc-doctor.sidebarView",
+    "onCommand:doc-doctor.helloWorld",
+    "onCommand:doc-doctor.checkSingleFile"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "doc-doctor.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "doc-doctor.checkSingleFile",
+        "title": "Doc-Doctor: 检查单个 C/C++ 文件"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "doc-doctor-sidebar",
+          "title": "doc-doctor",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "doc-doctor-sidebar": [
+        {
+          "id": "doc-doctor.sidebarView",
+          "name": "doc-doctor",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.107.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
+    "eslint": "^9.34.0",
+    "typescript": "^5.9.2",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
+{
+  "name": "doc-doctor",
+  "displayName": "doc-doctor",
   "description": "none",
   "version": "0.0.1",
   "engines": {
