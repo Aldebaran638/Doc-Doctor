@@ -18,24 +18,32 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this._extensionUri],
     };
 
-    webviewView.webview.html = this.getHtmlForWebview();
+    webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
     // 监听来自 Webview 的消息，用于触发文件检查命令
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "runSingleFileCheck") {
-        // 直接通过命令触发后端检查逻辑，后端用提示框输出结果
-        await vscode.commands.executeCommand("doc-doctor.checkSingleFile");
+        // 直接调用服务层封装，并把 webview 传入，用于回传结果
+        await pickAndCheckFile(webviewView.webview);
       }
     });
   }
 
-  private getHtmlForWebview(): string {
-    // 简单前端：一个按钮 + 前端脚本，通过 postMessage 通知扩展启动文件检查
+  private getHtmlForWebview(webview: vscode.Webview): string {
+    // 使用外部脚本文件 + nonce，避免 CSP 拦截脚本执行
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, "media", "sidebar.js")
+    );
+
+    const nonce = `${Date.now()}${Math.random().toString().slice(2)}`;
+    const cspSource = webview.cspSource;
+
     return `<!DOCTYPE html>
       <html lang="zh-cn">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; script-src 'nonce-${nonce}' ${cspSource}; style-src 'unsafe-inline' ${cspSource};" />
         <title>doc-doctor</title>
         <style>
           body {
@@ -50,16 +58,8 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
       </head>
       <body>
         <button id="run-check">检查单个 C/C++ 文件</button>
-        <script>
-          const vscode = acquireVsCodeApi();
-          const btn = document.getElementById('run-check');
-
-          if (btn) {
-            btn.addEventListener('click', () => {
-              vscode.postMessage({ type: 'runSingleFileCheck' });
-            });
-          }
-        </script>
+        <div id="output"></div>
+        <script nonce="${nonce}" src="${scriptUri}"></script>
       </body>
       </html>`;
   }
