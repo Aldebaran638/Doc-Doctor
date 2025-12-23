@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import { checkFile, FunctionInfo } from "./fileCheck";
 import { checkFunction, ProblemInfo } from "./functionCheck";
+import {
+  DocDoctorSettings,
+  getDocDoctorSettings,
+  isFileWhitelisted,
+  shouldSkipFunction,
+} from "./fileWhiteList";
 
 /**
  * 总检查模块
@@ -49,6 +55,9 @@ export async function checkAllFiles(
   };
 
   try {
+    // 读取当前白名单相关设置
+    const settings: DocDoctorSettings = getDocDoctorSettings();
+
     // 查找所有 .c 和 .cpp 文件
     const files = await vscode.workspace.findFiles(
       "**/*.{c,cpp}",
@@ -66,6 +75,12 @@ export async function checkAllFiles(
     // 逐个检查文件
     for (const fileUri of files) {
       const relativePath = vscode.workspace.asRelativePath(fileUri, false);
+
+      // 文件白名单：被标记为白名单的文件直接跳过
+      if (isFileWhitelisted(fileUri.fsPath, settings)) {
+        result.skippedFiles.push(`${relativePath} (文件在白名单中)`);
+        continue;
+      }
 
       // 报告进度
       if (progressCallback) {
@@ -98,8 +113,12 @@ export async function checkAllFiles(
         continue;
       }
 
-      // 检查每个函数
+      // 检查每个函数，应用函数/返回类型/主函数白名单规则
       for (const funcInfo of parseResult.functions) {
+        if (shouldSkipFunction(funcInfo, settings)) {
+          continue;
+        }
+
         const funcProblems = checkFunction(funcInfo);
         result.problems.push(...funcProblems);
       }

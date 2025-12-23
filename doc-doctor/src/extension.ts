@@ -4,7 +4,11 @@ import * as vscode from "vscode";
 import { pickAndCheckFile } from "./modules/fileCheck";
 import { runProjectCheck } from "./modules/projectCheck";
 import { jumpToLocation, testJumpToLocation } from "./modules/jumpToLocation";
-import { testSaveToDatabase, testLoadFromDatabase, initDB } from "./modules/database";
+import {
+  testSaveToDatabase,
+  testLoadFromDatabase,
+  initDB,
+} from "./modules/database";
 
 // 注册侧边栏 WebviewViewProvider
 class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
@@ -24,7 +28,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
     // 监听来自 Webview 的消息，用于触发各个模块的测试功能
-    webviewView.webview.onDidReceiveMessage(async (message) => {
+    webviewView.webview.onDidReceiveMessage(async (message: any) => {
       switch (message?.type) {
         case "runSingleFileCheck":
           await pickAndCheckFile(webviewView.webview);
@@ -45,34 +49,115 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
           const filePath = message?.data?.filePath;
           const line = message?.data?.line;
           const col = message?.data?.col;
+          const functionName = message?.data?.functionName as
+            | string
+            | undefined;
           if (
             typeof filePath === "string" &&
             typeof line === "number" &&
             typeof col === "number"
           ) {
-            await jumpToLocation(filePath, line, col);
+            await jumpToLocation(filePath, line, col, functionName);
           } else {
             vscode.window.showErrorMessage("跳转失败：缺少 filePath/line/col");
           }
           break;
         }
         case "saveSettings": {
-          // TODO: 将设置保存到 VS Code 配置或 settings.json
-          const settings = message?.data;
-          console.log("[Doc-Doctor] 保存设置:", settings);
-          vscode.window.showInformationMessage("设置已保存（当前为演示，配置未持久化）");
-          webviewView.webview.postMessage({ type: "settingsSaved", success: true });
+          (async () => {
+            const settings = message?.data as {
+              checkMain?: boolean;
+              fileWhitelist?: string;
+              funcWhitelist?: string;
+            };
+
+            console.log("[Doc-Doctor] 保存设置:", settings);
+
+            const config = vscode.workspace.getConfiguration("doc-doctor");
+
+            try {
+              // 1. 主函数检查开关
+              await config.update(
+                "checkMainFunction",
+                !!settings?.checkMain,
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              // 2. 文件白名单：多行文本，每行一个前缀
+              const fileWhitelistArray = (settings?.fileWhitelist || "")
+                .split(/\r?\n/)
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+
+              await config.update(
+                "fileWhitelist",
+                fileWhitelistArray,
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              // 3. 函数白名单：约定每行 "相对文件路径:函数签名或函数名"
+              const funcWhitelistRaw = (settings?.funcWhitelist || "")
+                .split(/\r?\n/)
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+
+              const funcWhitelist: Record<string, string[]> = {};
+              for (const line of funcWhitelistRaw) {
+                const idx = line.indexOf(":");
+                if (idx <= 0) {
+                  continue;
+                }
+                const file = line.slice(0, idx).trim();
+                const func = line.slice(idx + 1).trim();
+                if (!file || !func) {
+                  continue;
+                }
+                if (!funcWhitelist[file]) {
+                  funcWhitelist[file] = [];
+                }
+                funcWhitelist[file].push(func);
+              }
+
+              await config.update(
+                "functionWhitelist",
+                funcWhitelist,
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              vscode.window.showInformationMessage("Doc-Doctor 设置已保存");
+
+              webviewView.webview.postMessage({
+                type: "settingsSaved",
+                success: true,
+              });
+
+              // 可选：保存设置后自动重新检查整个项目
+              await runProjectCheck(webviewView.webview);
+            } catch (err) {
+              console.error("[Doc-Doctor] 保存设置失败:", err);
+              vscode.window.showErrorMessage(
+                `保存 Doc-Doctor 设置失败: ${(err as Error).message}`
+              );
+              webviewView.webview.postMessage({
+                type: "settingsSaved",
+                success: false,
+              });
+            }
+          })();
+
           break;
         }
         case "updateProblemStatus": {
           // TODO: 更新数据库中的问题状态
           const problemId = message?.data?.id;
           const status = message?.data?.status;
-          console.log(`[Doc-Doctor] 更新问题状态: id=${problemId}, status=${status}`);
+          console.log(
+            `[Doc-Doctor] 更新问题状态: id=${problemId}, status=${status}`
+          );
           // 当前仅返回成功，后续接入数据库
-          webviewView.webview.postMessage({ 
-            type: "problemStatusUpdated", 
-            data: { id: problemId, status: status, success: true }
+          webviewView.webview.postMessage({
+            type: "problemStatusUpdated",
+            data: { id: problemId, status: status, success: true },
           });
           break;
         }
@@ -97,7 +182,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
     // 这里我们假设会在 media 目录下放置 toolkit.js
     // 如果没有本地文件，暂时使用 CDN 链接（需调整 CSP）
     const toolkitUri = webview.asWebviewUri(
-        vscode.Uri.joinPath(this._extensionUri, "media", "toolkit.js")
+      vscode.Uri.joinPath(this._extensionUri, "media", "toolkit.js")
     );
 
     const nonce = `${Date.now()}${Math.random().toString().slice(2)}`;

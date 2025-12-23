@@ -16,6 +16,43 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Doc-Doctor",
+      "properties": {
+        "doc-doctor.checkMainFunction": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否检查 main 函数的注释问题。默认不检查 main。"
+        },
+        "doc-doctor.fileWhitelist": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "文件白名单列表。每一项为工作区相对路径前缀，例如 src/legacy/ 或 test/。匹配到的文件将被跳过检查。"
+        },
+        "doc-doctor.functionWhitelist": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "markdownDescription": "函数白名单，键为相对文件路径（如 src/file1.c），值为函数签名或函数名数组。命中白名单的函数将被跳过检查。"
+        },
+        "doc-doctor.returnTypeWhitelist": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "按返回值类型过滤的函数白名单。例如 [\"void\"] 表示忽略所有返回类型为 void 的函数。"
+        }
+      }
+    },
     "commands": [
       {
         "command": "doc-doctor.helloWorld",
@@ -65,6 +102,6 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "koffi": "^2.14.1"
+    "koffi": "^2.15.0"
   }
 }

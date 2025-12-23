@@ -53,13 +53,33 @@ export async function checkFile(uri: vscode.Uri): Promise<ParseResult> {
   while ((match = regex.exec(content)) !== null) {
     const fullMatch = match[0];
     const functionName = match[2];
+
+    // 过滤控制语句等非函数定义，例如 for(...) / if(...) / while(...)
+    const lowerName = functionName.toLowerCase();
+    if (
+      lowerName === "for" ||
+      lowerName === "if" ||
+      lowerName === "while" ||
+      lowerName === "switch"
+    ) {
+      continue;
+    }
+
     const functionSignature = match[0].replace("{", "").trim();
 
+    // 以函数名在源码中的位置作为定位基准，避免行列落在前一个代码块的末尾
     const matchIndex = match.index;
-    const textBefore = content.slice(0, matchIndex);
+    const nameOffsetInMatch = fullMatch.indexOf(functionName);
+    const nameGlobalIndex =
+      nameOffsetInMatch >= 0 ? matchIndex + nameOffsetInMatch : matchIndex;
+
+    const textBefore = content.slice(0, nameGlobalIndex);
     const linesBefore = textBefore.split(/\r?\n/);
     const lineNumber = linesBefore.length;
-    const columnNumber = linesBefore[linesBefore.length - 1].length + 1;
+    const columnNumber =
+      linesBefore.length > 0
+        ? linesBefore[linesBefore.length - 1].length + 1
+        : 1;
 
     // 提取函数前面的 Doxygen 注释（向上查找最近的 /** ... */ 块）
     const comment = extractCommentBeforeFunction(content, matchIndex);

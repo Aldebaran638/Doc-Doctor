@@ -18,7 +18,8 @@ import * as vscode from "vscode";
 export async function jumpToLocation(
   filePath: string,
   lineNumber: number,
-  columnNumber: number
+  columnNumber: number,
+  functionName?: string
 ): Promise<boolean> {
   try {
     // 尝试将相对路径转换为 URI
@@ -54,8 +55,32 @@ export async function jumpToLocation(
     // 显示文档
     const editor = await vscode.window.showTextDocument(document);
 
-    // 转换为 VS Code Position（0-based）
-    const position = new vscode.Position(lineNumber - 1, columnNumber - 1);
+    // 基于传入的行号（1-based）得到一个初始行（0-based）
+    let targetLine = Math.max(0, lineNumber - 1);
+
+    // 如果提供了函数名，则在目标行附近小范围搜索真正的函数定义行
+    if (functionName && functionName.trim().length > 0) {
+      const name = functionName.trim();
+      const totalLines = document.lineCount;
+      const start = Math.max(0, targetLine - 5);
+      const end = Math.min(totalLines - 1, targetLine + 5);
+
+      for (let i = start; i <= end; i++) {
+        const text = document.lineAt(i).text;
+        if (text.includes(name) && text.includes("(")) {
+          targetLine = i;
+          break;
+        }
+      }
+    }
+
+    // 定位到函数定义这一行的行首（或第一个非空白字符）
+    const lineText = document.lineAt(targetLine).text;
+    const firstNonWhite = lineText.search(/\S|$/);
+    const position = new vscode.Position(
+      targetLine,
+      Math.max(0, firstNonWhite)
+    );
 
     // 移动光标到指定位置
     editor.selection = new vscode.Selection(position, position);

@@ -406,7 +406,15 @@
         const line = p.lineNumber;
         const col = p.columnNumber || 1;
         if (typeof filePath === 'string' && typeof line === 'number') {
-          vscode.postMessage({ type: 'jumpToProblem', data: { filePath: filePath, line: line, col: col } });
+          vscode.postMessage({
+            type: 'jumpToProblem',
+            data: {
+              filePath: filePath,
+              line: line,
+              col: col,
+              functionName: p.functionName || undefined
+            }
+          });
         } else {
           appendLog('跳转失败：问题缺少 filePath/lineNumber');
         }
