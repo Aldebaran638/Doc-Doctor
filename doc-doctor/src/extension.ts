@@ -13,6 +13,8 @@ import {
 // 注册侧边栏 WebviewViewProvider
 class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "doc-doctor.sidebarView";
+  private _currentWebview: vscode.Webview | undefined;
+
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
   resolveWebviewView(
@@ -25,6 +27,8 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this._extensionUri],
     };
 
+    this._currentWebview = webviewView.webview;
+
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
     // 监听来自 Webview 的消息，用于触发各个模块的测试功能
@@ -32,7 +36,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
       switch (message?.type) {
         case "requestSettings": {
           // Webview 主动请求当前配置，用于初始化设置页
-          this.postCurrentSettings(webviewView.webview);
+          await this.postCurrentSettings(webviewView.webview);
           break;
         }
         case "runSingleFileCheck":
@@ -204,7 +208,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 将当前 doc-doctor 相关设置发送给 Webview，用于初始化设置页面
    */
-  private postCurrentSettings(webview: vscode.Webview) {
+  private async postCurrentSettings(webview: vscode.Webview) {
     const config = vscode.workspace.getConfiguration("doc-doctor");
 
     const checkMain = config.get<boolean>("checkMainFunction", false);
@@ -239,6 +243,72 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
         returnTypeWhitelistText: returnTypeWhitelistArray.join("\n"),
       },
     });
+
+    // 检查工作区 .vscode/settings.json 状态，并输出提示信息
+    let summary = "";
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      summary = "Doc-Doctor: 未找到工作区文件夹，将使用默认 Doc-Doctor 设置。";
+    } else {
+      const root = folders[0].uri;
+      const settingsUri = vscode.Uri.joinPath(root, ".vscode", "settings.json");
+      try {
+        const data = await vscode.workspace.fs.readFile(settingsUri);
+        const text = Buffer.from(data).toString("utf8").trim();
+        if (!text) {
+          summary =
+            "Doc-Doctor: 当前工作区 .vscode/settings.json 为空，将使用默认 Doc-Doctor 设置。";
+        } else {
+          try {
+            const json = JSON.parse(text) as Record<string, unknown>;
+            const hasDocDoctorKey =
+              "doc-doctor.checkMainFunction" in json ||
+              "doc-doctor.fileWhitelist" in json ||
+              "doc-doctor.functionWhitelist" in json ||
+              "doc-doctor.returnTypeWhitelist" in json;
+
+            if (hasDocDoctorKey) {
+              summary =
+                "Doc-Doctor: 已从 settings.json 读取配置:\n" +
+                `- checkMainFunction: ${checkMain}\n` +
+                `- fileWhitelist: ${
+                  fileWhitelistArray.length > 0
+                    ? fileWhitelistArray.join(", ")
+                    : "(空)"
+                }\n` +
+                `- functionWhitelist: ${funcLines.length} 条\n` +
+                `- returnTypeWhitelist: ${
+                  returnTypeWhitelistArray.length > 0
+                    ? returnTypeWhitelistArray.join(", ")
+                    : "(空)"
+                }`;
+            } else {
+              summary =
+                "Doc-Doctor: 当前 settings.json 中未找到 Doc-Doctor 配置，使用默认值或全局设置。";
+            }
+          } catch {
+            summary =
+              "Doc-Doctor: 检测到 .vscode/settings.json 语法错误，将使用默认 Doc-Doctor 设置。请修复 settings.json 后重试。";
+          }
+        }
+      } catch {
+        summary =
+          "Doc-Doctor: 当前工作区没有 .vscode/settings.json，将使用默认 Doc-Doctor 设置。";
+      }
+    }
+
+    if (summary) {
+      webview.postMessage({ type: "log", message: summary });
+    }
+  }
+
+  /**
+   * VS Code 配置发生变化时调用，重新推送最新设置到 Webview
+   */
+  public async onConfigurationChanged() {
+    if (this._currentWebview) {
+      await this.postCurrentSettings(this._currentWebview);
+    }
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {
@@ -506,11 +576,21 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(checkSingleFileCommand);
 
   // 注册侧边栏视图提供者
+  const sidebarProvider = new DocDoctorSidebarProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       DocDoctorSidebarProvider.viewType,
-      new DocDoctorSidebarProvider(context.extensionUri)
+      sidebarProvider
     )
+  );
+
+  // 监听 Doc-Doctor 相关配置变更，实时刷新设置到侧边栏
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("doc-doctor")) {
+        sidebarProvider.onConfigurationChanged();
+      }
+    })
   );
 }
 
