@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { checkFile, FunctionInfo } from "./fileCheck";
-import { checkFunction, ProblemInfo } from "./functionCheck";
+import { checkFunction, ProblemInfo, ProblemType } from "./functionCheck";
 import {
   DocDoctorSettings,
   getDocDoctorSettings,
@@ -100,6 +100,68 @@ export async function checkAllFiles(
         }
       } catch (err) {
         result.skippedFiles.push(`${relativePath} (无法读取文件信息)`);
+        continue;
+      }
+
+      // 通过 VS Code 诊断获取该文件的语法/编译错误，并生成一条汇总语法错误问题项
+      // 如果存在语法错误，则不对该文件做后续的注释检查
+      let hasSyntaxError = false;
+      try {
+        const diagnostics = vscode.languages.getDiagnostics(fileUri) || [];
+        let firstError: vscode.Diagnostic | undefined;
+        let errorCount = 0;
+
+        for (const diag of diagnostics) {
+          if (diag.severity !== vscode.DiagnosticSeverity.Error) {
+            continue;
+          }
+
+          errorCount++;
+          if (!firstError) {
+            firstError = diag;
+          }
+        }
+
+        if (firstError) {
+          hasSyntaxError = true;
+
+          const line = firstError.range.start.line + 1;
+          const col = firstError.range.start.character + 1;
+          const summary =
+            errorCount > 1
+              ? `该文件存在 ${errorCount} 处语法错误（示例：${firstError.message}）`
+              : `语法错误: ${firstError.message}`;
+
+          const syntaxProblem: ProblemInfo = {
+            problemType: ProblemType.SYNTAX_ERROR,
+            filePath: fileUri.fsPath,
+            functionName: "(语法错误)",
+            functionSignature: "",
+            lineNumber: line,
+            columnNumber: col,
+            problemDescription: summary,
+            functionSnippet: "",
+          };
+
+          result.problems.push(syntaxProblem);
+
+          if (result.problems.length >= 1000) {
+            result.errorMessage = "已达到最大问题数量限制（1000），停止检查";
+            break;
+          }
+        }
+
+        if (result.problems.length >= 1000) {
+          break;
+        }
+      } catch {
+        // 诊断获取失败不影响后续注释检查
+      }
+
+      if (hasSyntaxError) {
+        result.skippedFiles.push(
+          `${relativePath} (存在语法错误，已跳过注释检查)`
+        );
         continue;
       }
 

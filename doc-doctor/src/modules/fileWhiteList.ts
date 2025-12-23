@@ -119,19 +119,27 @@ export function isFunctionWhitelisted(
   settings: DocDoctorSettings
 ): boolean {
   const rel = getRelativePath(func.filePath);
-  const list = settings.functionWhitelist[rel];
-  if (!list || list.length === 0) {
-    return false;
+
+  // 1) 文件级白名单
+  const perFileList = settings.functionWhitelist[rel];
+  if (perFileList && perFileList.length > 0) {
+    if (perFileList.includes(func.functionSignature)) {
+      return true;
+    }
+    if (perFileList.includes(func.functionName)) {
+      return true;
+    }
   }
 
-  // 先按完整函数签名匹配
-  if (list.includes(func.functionSignature)) {
-    return true;
-  }
-
-  // 再按函数名匹配（退而求其次）
-  if (list.includes(func.functionName)) {
-    return true;
+  // 2) 全局函数白名单（"*" 作为特殊 key）
+  const globalList = settings.functionWhitelist["*"];
+  if (globalList && globalList.length > 0) {
+    if (globalList.includes(func.functionSignature)) {
+      return true;
+    }
+    if (globalList.includes(func.functionName)) {
+      return true;
+    }
   }
 
   return false;

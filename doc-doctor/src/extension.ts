@@ -30,6 +30,11 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
     // 监听来自 Webview 的消息，用于触发各个模块的测试功能
     webviewView.webview.onDidReceiveMessage(async (message: any) => {
       switch (message?.type) {
+        case "requestSettings": {
+          // Webview 主动请求当前配置，用于初始化设置页
+          this.postCurrentSettings(webviewView.webview);
+          break;
+        }
         case "runSingleFileCheck":
           await pickAndCheckFile(webviewView.webview);
           break;
@@ -69,6 +74,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
               checkMain?: boolean;
               fileWhitelist?: string;
               funcWhitelist?: string;
+              returnTypeWhitelist?: string;
             };
 
             console.log("[Doc-Doctor] 保存设置:", settings);
@@ -95,32 +101,55 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                 vscode.ConfigurationTarget.Workspace
               );
 
-              // 3. 函数白名单：约定每行 "相对文件路径:函数签名或函数名"
+              // 3. 函数白名单：
+              //    - 支持 "相对文件路径:函数签名或函数名"（精确到文件）
+              //    - 也支持仅写函数名，表示全局函数白名单
               const funcWhitelistRaw = (settings?.funcWhitelist || "")
                 .split(/\r?\n/)
                 .map((s) => s.trim())
                 .filter((s) => s.length > 0);
 
               const funcWhitelist: Record<string, string[]> = {};
+              const globalFuncs: string[] = [];
               for (const line of funcWhitelistRaw) {
                 const idx = line.indexOf(":");
                 if (idx <= 0) {
-                  continue;
+                  // 仅函数名：加入全局白名单
+                  globalFuncs.push(line.trim());
+                } else {
+                  const file = line.slice(0, idx).trim();
+                  const func = line.slice(idx + 1).trim();
+                  if (!file || !func) {
+                    continue;
+                  }
+                  if (!funcWhitelist[file]) {
+                    funcWhitelist[file] = [];
+                  }
+                  funcWhitelist[file].push(func);
                 }
-                const file = line.slice(0, idx).trim();
-                const func = line.slice(idx + 1).trim();
-                if (!file || !func) {
-                  continue;
-                }
-                if (!funcWhitelist[file]) {
-                  funcWhitelist[file] = [];
-                }
-                funcWhitelist[file].push(func);
+              }
+
+              if (globalFuncs.length > 0) {
+                funcWhitelist["*"] = globalFuncs;
               }
 
               await config.update(
                 "functionWhitelist",
                 funcWhitelist,
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              // 4. 返回值类型白名单：每行一个返回值类型，例如 "void"
+              const returnTypeWhitelistArray = (
+                settings?.returnTypeWhitelist || ""
+              )
+                .split(/\r?\n/)
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+
+              await config.update(
+                "returnTypeWhitelist",
+                returnTypeWhitelistArray,
                 vscode.ConfigurationTarget.Workspace
               );
 
@@ -169,6 +198,46 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
           break;
         }
       }
+    });
+  }
+
+  /**
+   * 将当前 doc-doctor 相关设置发送给 Webview，用于初始化设置页面
+   */
+  private postCurrentSettings(webview: vscode.Webview) {
+    const config = vscode.workspace.getConfiguration("doc-doctor");
+
+    const checkMain = config.get<boolean>("checkMainFunction", false);
+    const fileWhitelistArray = config.get<string[]>("fileWhitelist", []) ?? [];
+    const funcWhitelistObj =
+      config.get<Record<string, string[]>>("functionWhitelist", {}) ?? {};
+    const returnTypeWhitelistArray =
+      config.get<string[]>("returnTypeWhitelist", []) ?? [];
+
+    // 函数白名单在 UI 中按一行一个 "相对路径:函数名/签名" 展示
+    const funcLines: string[] = [];
+    for (const [file, funcs] of Object.entries(funcWhitelistObj)) {
+      if (!Array.isArray(funcs)) {
+        continue;
+      }
+      for (const fn of funcs) {
+        if (file === "*") {
+          // 全局函数白名单在 UI 中仅展示函数名
+          funcLines.push(fn);
+        } else {
+          funcLines.push(`${file}:${fn}`);
+        }
+      }
+    }
+
+    webview.postMessage({
+      type: "initSettings",
+      data: {
+        checkMain,
+        fileWhitelistText: fileWhitelistArray.join("\n"),
+        funcWhitelistText: funcLines.join("\n"),
+        returnTypeWhitelistText: returnTypeWhitelistArray.join("\n"),
+      },
     });
   }
 
@@ -367,6 +436,12 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                     <h3>函数白名单</h3>
                     <p style="font-size:11px;opacity:0.7;margin:0 0 8px 0;">每行一个函数名</p>
                     <vscode-text-area id="setting-func-whitelist" rows="3" placeholder="init&#10;cleanup" resize="vertical"></vscode-text-area>
+
+                    <vscode-divider></vscode-divider>
+
+                    <h3>返回值类型白名单</h3>
+                    <p style="font-size:11px;opacity:0.7;margin:0 0 8px 0;">每行一个返回值类型，例如 void、int 等</p>
+                    <vscode-text-area id="setting-returntype-whitelist" rows="3" placeholder="void" resize="vertical"></vscode-text-area>
                     
                     <vscode-button id="save-settings" appearance="primary" style="margin-top:12px;">保存设置</vscode-button>
                 </div>

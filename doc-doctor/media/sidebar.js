@@ -16,6 +16,7 @@
   const settingCheckMain = document.getElementById('setting-check-main');
   const settingFileWhitelist = document.getElementById('setting-file-whitelist');
   const settingFuncWhitelist = document.getElementById('setting-func-whitelist');
+  const settingReturnTypeWhitelist = document.getElementById('setting-returntype-whitelist');
 
   /** @type {Array<any>} */
   let currentProblems = [];
@@ -24,6 +25,9 @@
   let currentSource = 'none';
   let currentSummary = '';
   let isChecking = false;
+
+  // Webview 加载完成后主动向扩展请求当前配置，用于初始化设置页
+  vscode.postMessage({ type: 'requestSettings' });
 
   // 1. 检查单个文件按钮
   if (btn) {
@@ -92,7 +96,8 @@
       const settings = {
         checkMain: settingCheckMain ? settingCheckMain.checked : false,
         fileWhitelist: settingFileWhitelist ? settingFileWhitelist.value : '',
-        funcWhitelist: settingFuncWhitelist ? settingFuncWhitelist.value : ''
+        funcWhitelist: settingFuncWhitelist ? settingFuncWhitelist.value : '',
+        returnTypeWhitelist: settingReturnTypeWhitelist ? settingReturnTypeWhitelist.value : ''
       };
       vscode.postMessage({ type: 'saveSettings', data: settings });
       appendLog('正在保存设置...');
@@ -119,6 +124,9 @@
     }
 
     switch (message.type) {
+      case 'initSettings':
+        applyInitialSettings(message.data || {});
+        break;
       case 'singleFileCheckResult':
         handleSingleFileCheckResult(message);
         break;
@@ -158,6 +166,28 @@
         break;
     }
   });
+
+  function applyInitialSettings(data) {
+    try {
+      if (settingCheckMain && typeof data.checkMain === 'boolean') {
+        settingCheckMain.checked = data.checkMain;
+      }
+      if (settingFileWhitelist && typeof data.fileWhitelistText === 'string') {
+        settingFileWhitelist.value = data.fileWhitelistText;
+      }
+      if (settingFuncWhitelist && typeof data.funcWhitelistText === 'string') {
+        settingFuncWhitelist.value = data.funcWhitelistText;
+      }
+      if (
+        settingReturnTypeWhitelist &&
+        typeof data.returnTypeWhitelistText === 'string'
+      ) {
+        settingReturnTypeWhitelist.value = data.returnTypeWhitelistText;
+      }
+    } catch (e) {
+      appendLog('初始化设置时出错: ' + e);
+    }
+  }
 
   function handleSingleFileCheckResult(message) {
     const filePath = message.filePath || '(未知文件)';
