@@ -1,8 +1,8 @@
 /**
  * Doc-Doctor 数据库模块测试程序
- * 
+ *
  * 用于本地测试数据库功能，不会被编译到动态库中
- * 
+ *
  * 编译方式（单独编译测试程序）：
  * g++ -o test_db main.cpp database.cpp -lsqlite3 -std=c++17
  */
@@ -11,13 +11,15 @@
 #include <iostream>
 #include <string>
 
-int main() {
+int main()
+{
     std::cout << "=== Doc-Doctor Database Test ===" << std::endl;
 
     // 1. 初始化数据库
     std::cout << "\n[Test 1] Initialize database..." << std::endl;
     int rc = initDatabase("test_problems.db");
-    if (rc != 0) {
+    if (rc != 0)
+    {
         std::cerr << "Failed to initialize database!" << std::endl;
         return 1;
     }
@@ -29,8 +31,8 @@ int main() {
 
     // 3. 插入测试数据
     std::cout << "\n[Test 3] Insert test problems..." << std::endl;
-    
-    const char* problem1 = R"( {
+
+    const char *problem1 = R"( {
         "problem_type": 3,
         "file_path": "src/main.c",
         "function_signature": "int main(int argc, char* argv[]) ",
@@ -46,7 +48,7 @@ int main() {
     int id1 = saveProblem(problem1);
     std::cout << "Inserted problem 1 with ID: " << id1 << std::endl;
 
-    const char* problem2 = R"({
+    const char *problem2 = R"({
         "problem_type": 1,
         "file_path": "src/utils.c",
         "function_signature": "int add(int a, int b) ",
@@ -64,27 +66,34 @@ int main() {
 
     // 4. 读取所有问题
     std::cout << "\n[Test 4] Load all problems..." << std::endl;
-    const char* allProblems = loadAllProblems();
-    if (allProblems) {
+    const char *allProblems = loadAllProblems();
+    if (allProblems)
+    {
         std::cout << "Loaded problems JSON:" << std::endl;
         std::cout << allProblems << std::endl;
-    } else {
+    }
+    else
+    {
         std::cerr << "Failed to load problems!" << std::endl;
     }
 
     // 5. 更新问题状态
     std::cout << "\n[Test 5] Update problem status..." << std::endl;
-    rc = updateProblemStatus(id1, 1);  // 标记为已完成
-    if (rc == 0) {
+    rc = updateProblemStatus(id1, 1); // 标记为已完成
+    if (rc == 0)
+    {
         std::cout << "Problem " << id1 << " marked as completed." << std::endl;
-    } else {
+    }
+    else
+    {
         std::cerr << "Failed to update status!" << std::endl;
     }
 
     // 6. 再次读取验证
     std::cout << "\n[Test 6] Verify update..." << std::endl;
     allProblems = loadAllProblems();
-    if (allProblems) {
+    if (allProblems)
+    {
         std::cout << "Updated problems JSON:" << std::endl;
         std::cout << allProblems << std::endl;
     }
@@ -96,6 +105,3 @@ int main() {
     std::cout << "\n=== All tests completed ===" << std::endl;
     return 0;
 }
-
-
-

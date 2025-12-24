@@ -165,19 +165,45 @@ export function isReturnTypeWhitelisted(
     return false;
   }
 
-  const beforeParen = sig.slice(0, parenIndex).trim();
+  let beforeParen = sig.slice(0, parenIndex).trim();
   if (!beforeParen) {
     return false;
   }
 
-  // 取最后一个单词作为“基准返回类型”，例如 "const void" => "void"
-  const parts = beforeParen.split(/\s+/);
+  // 去掉末尾的函数名部分，仅保留返回值相关修饰和类型
+  const funcName = func.functionName?.trim();
+  if (funcName) {
+    const idx = beforeParen.lastIndexOf(funcName);
+    if (idx >= 0) {
+      beforeParen = beforeParen.slice(0, idx).trim();
+    }
+  }
+
+  if (!beforeParen) {
+    return false;
+  }
+
+  // 去除修饰关键字和指针/引用符号，只保留基础类型词
+  let cleaned = beforeParen
+    // 删除常见修饰关键字
+    .replace(/\b(static|const|inline|virtual|constexpr|friend|extern)\b/g, " ")
+    // 删除连续的 * 和 &
+    .replace(/[\*&]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return false;
+  }
+
+  const parts = cleaned.split(/\s+/);
   const baseType = parts[parts.length - 1];
 
   return settings.returnTypeWhitelist.some((t) => {
     const tt = t.trim();
     if (!tt) return false;
-    return baseType === tt;
+    // 同时支持匹配基础类型（"void"）和完整类型串（"unsigned long"）
+    return baseType === tt || cleaned === tt;
   });
 }
 
