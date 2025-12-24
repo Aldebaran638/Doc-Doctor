@@ -30,10 +30,10 @@ int main() {
     // 3. 插入测试数据
     std::cout << "\n[Test 3] Insert test problems..." << std::endl;
     
-    const char* problem1 = R"({
+    const char* problem1 = R"( {
         "problem_type": 3,
         "file_path": "src/main.c",
-        "function_signature": "int main(int argc, char* argv[])",
+        "function_signature": "int main(int argc, char* argv[]) ",
         "function_name": "main",
         "line_number": 10,
         "column_number": 1,
@@ -41,7 +41,7 @@ int main() {
         "function_snippet": "int main(int argc, char* argv[]) { return 0; }",
         "check_timestamp": "2025-12-22T22:00:00.000Z",
         "status": 0
-    })";
+    } )";
 
     int id1 = saveProblem(problem1);
     std::cout << "Inserted problem 1 with ID: " << id1 << std::endl;
@@ -49,7 +49,7 @@ int main() {
     const char* problem2 = R"({
         "problem_type": 1,
         "file_path": "src/utils.c",
-        "function_signature": "int add(int a, int b)",
+        "function_signature": "int add(int a, int b) ",
         "function_name": "add",
         "line_number": 25,
         "column_number": 5,

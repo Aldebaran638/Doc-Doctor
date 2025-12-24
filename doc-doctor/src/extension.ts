@@ -7,6 +7,7 @@ import { jumpToLocation, testJumpToLocation } from "./modules/jumpToLocation";
 import {
   testSaveToDatabase,
   testLoadFromDatabase,
+  loadProblemsFromDB,
   initDB,
 } from "./modules/database";
 
@@ -31,12 +32,43 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
+    // 每次视图被解析或重新可见时，从数据库加载已有问题并展示到“问题展示区”
+    const refreshFromDatabase = async () => {
+      try {
+        // 可能存在：扩展激活时工作区尚未打开，导致 initDB 失败。
+        // 这里在侧边栏可见时重试初始化，确保能读取到真实数据库。
+        const ok = initDB(this._extensionUri);
+        void ok;
+
+        const result = await loadProblemsFromDB();
+        webviewView.webview.postMessage({
+          type: "databaseLoadResult",
+          result,
+        });
+      } catch (err) {
+        console.error("[Doc-Doctor] 自动从数据库加载问题失败:", err);
+      }
+    };
+
+    // 首次打开侧边栏时加载一次
+    refreshFromDatabase();
+
+    // 当用户在不同侧边栏之间切换时，如果本视图重新可见，再加载一次
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible) {
+        refreshFromDatabase();
+      }
+    });
+
     // 监听来自 Webview 的消息，用于触发各个模块的测试功能
     webviewView.webview.onDidReceiveMessage(async (message: any) => {
       switch (message?.type) {
         case "requestSettings": {
           // Webview 主动请求当前配置，用于初始化设置页
           await this.postCurrentSettings(webviewView.webview);
+          // requestSettings 一定发生在 Webview 脚本已加载之后；
+          // 在这里刷新一次，避免 resolveWebviewView 初次 postMessage 过早被丢弃。
+          await refreshFromDatabase();
           break;
         }
         case "runSingleFileCheck":
@@ -49,7 +81,10 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
           await testJumpToLocation(webviewView.webview);
           break;
         case "testSaveToDatabase":
-          await testSaveToDatabase(webviewView.webview);
+          await testSaveToDatabase(
+            webviewView.webview,
+            message?.data?.problems
+          );
           break;
         case "testLoadFromDatabase":
           await testLoadFromDatabase(webviewView.webview);

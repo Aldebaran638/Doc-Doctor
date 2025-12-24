@@ -73,9 +73,10 @@
   if (btnSaveDB) {
     btnSaveDB.addEventListener('click', function () {
       if (output) {
-        output.textContent = '正在测试存储到数据库...';
+        output.textContent = '正在将当前问题列表存储到数据库...';
       }
-      vscode.postMessage({ type: 'testSaveToDatabase' });
+      const problemsToSave = getFilteredProblems();
+      vscode.postMessage({ type: 'testSaveToDatabase', data: { problems: problemsToSave } });
     });
   }
 
@@ -83,7 +84,7 @@
   if (btnLoadDB) {
     btnLoadDB.addEventListener('click', function () {
       if (output) {
-        output.textContent = '正在测试从数据库读取...';
+        output.textContent = '正在从数据库读取问题详情...';
       }
       setEmptyState('正在从数据库读取...（问题列表加载中）');
       vscode.postMessage({ type: 'testLoadFromDatabase' });
@@ -306,7 +307,24 @@
       '✅ ' + result.message + '\n\n' +
       '=== 数据库中的问题 ===\n' +
       '记录数: ' + currentProblems.length + '\n';
-    output.textContent = currentSummary;
+
+    // 在输出日志中打印每条问题的详细信息
+    const lines = currentProblems.map(function (p, idx) {
+      const id = p.id != null ? p.id : idx + 1;
+      const type = typeLabel(p.problemType);
+      const file = p.filePath || '(未知文件)';
+      const line = p.lineNumber || 0;
+      const col = p.columnNumber || 0;
+      const func = p.functionName || '(未知函数)';
+      const desc = p.problemDescription || '';
+      return (
+        '[' + id + '] ' + type + ' ' + file + ':' + line + ':' + col +
+        ' ' + func + ' - ' + desc
+      );
+    });
+
+    output.textContent =
+      currentSummary + (lines.length > 0 ? '\n' + lines.join('\n') : '');
     renderProblems();
   }
 
@@ -341,17 +359,13 @@
     }
   }
 
-  function renderProblems() {
-    if (!problemListEl) {
-      return;
-    }
-
+  function getFilteredProblems() {
     const q = (searchInput && typeof searchInput.value === 'string')
       ? searchInput.value.trim().toLowerCase()
       : '';
     const typeVal = typeFilter && typeFilter.value ? String(typeFilter.value) : 'all';
 
-    const filtered = currentProblems.filter(function (p) {
+    return currentProblems.filter(function (p) {
       if (!p) {
         return false;
       }
@@ -369,6 +383,13 @@
         (p.problemDescription || '');
       return hay.toLowerCase().indexOf(q) !== -1;
     });
+  }
+
+  function renderProblems() {
+    if (!problemListEl) {
+      return;
+    }
+    const filtered = getFilteredProblems();
 
     if (filtered.length === 0) {
       const hint = currentSource === 'none'

@@ -16,6 +16,9 @@ let koffi: typeof import("koffi") | null = null;
 let nativeLib: NativeLib | null = null;
 let dbInitialized = false;
 
+// 最近一次检查得到的问题列表（供调试功能“测试存储”使用）
+let lastProblemsForDebug: ProblemInfo[] | null = null;
+
 /**
  * C++ 动态库接口类型定义
  */
@@ -64,6 +67,14 @@ export interface LoadResult {
 }
 
 /**
+ * 记录最近一次检查得到的问题结果
+ * 由项目检查模块在检查结束后调用
+ */
+export function setLastProblemsForDebug(problems: ProblemInfo[]): void {
+  lastProblemsForDebug = problems.slice();
+}
+
+/**
  * 初始化数据库模块
  * 加载 C++ 动态库并创建数据库连接
  *
@@ -104,7 +115,10 @@ export function initDB(extensionUri: vscode.Uri): boolean {
       initDatabase: lib.func("initDatabase", "int", ["str"]),
       saveProblem: lib.func("saveProblem", "int", ["str"]),
       loadAllProblems: lib.func("loadAllProblems", "str", []),
-      updateProblemStatus: lib.func("updateProblemStatus", "int", ["int", "int"]),
+      updateProblemStatus: lib.func("updateProblemStatus", "int", [
+        "int",
+        "int",
+      ]),
       clearProblems: lib.func("clearProblems", "int", []),
       closeDatabase: lib.func("closeDatabase", "void", []),
     };
@@ -143,6 +157,7 @@ export function initDB(extensionUri: vscode.Uri): boolean {
  * 检查数据库是否可用
  */
 function isDBAvailable(): boolean {
+  // 这里不要输出过于频繁的日志，避免刷屏；由调用者打印关键路径。
   return dbInitialized && nativeLib !== null;
 }
 
@@ -376,28 +391,67 @@ export async function clearAllProblems(): Promise<boolean> {
 }
 
 /**
+ * 将任意一批问题保存到数据库时的格式归一化
+ */
+function normalizeProblems(raw: any[]): ProblemInfo[] {
+  return raw
+    .map((p) => ({
+      problemType: p.problemType,
+      filePath: p.filePath,
+      functionName: p.functionName,
+      functionSignature: p.functionSignature,
+      lineNumber: p.lineNumber,
+      columnNumber: p.columnNumber,
+      problemDescription: p.problemDescription,
+      functionSnippet: p.functionSnippet,
+    }))
+    .filter(
+      (p) =>
+        p &&
+        typeof p.problemType === "number" &&
+        typeof p.filePath === "string" &&
+        typeof p.functionName === "string"
+    );
+}
+
+/**
  * 提供给命令使用的封装：测试数据库存储功能
+ * - 优先保存“当前前端显示的问题列表”（传自 Webview）
+ * - 如果 Webview 未传递列表，则尝试使用最近一次检查结果
  */
 export async function testSaveToDatabase(
-  webview?: vscode.Webview
+  webview?: vscode.Webview,
+  problemsFromWebview?: any[]
 ): Promise<void> {
-  const mockProblem: ProblemInfo = {
-    problemType: ProblemType.BRIEF_MISSING,
-    filePath: "test/demo.c",
-    functionName: "testFunction",
-    functionSignature: "void testFunction(int x)",
-    lineNumber: 1,
-    columnNumber: 1,
-    problemDescription: "测试问题：缺少函数功能描述",
-    functionSnippet: "void testFunction(int x) { }",
-  };
+  let problemsToSave: ProblemInfo[] = [];
 
-  const result = await saveProblemToDB(mockProblem);
+  if (Array.isArray(problemsFromWebview) && problemsFromWebview.length > 0) {
+    problemsToSave = normalizeProblems(problemsFromWebview);
+  } else if (lastProblemsForDebug && lastProblemsForDebug.length > 0) {
+    problemsToSave = lastProblemsForDebug.slice();
+  }
+
+  if (!problemsToSave || problemsToSave.length === 0) {
+    const result: SaveResult = {
+      success: false,
+      message: "当前问题列表为空，且没有最近检查结果可用，无法保存到数据库",
+    };
+
+    vscode.window.showWarningMessage(result.message);
+
+    if (webview) {
+      webview.postMessage({
+        type: "databaseSaveResult",
+        result,
+      });
+    }
+    return;
+  }
+
+  const result = await saveProblemsToDBBatch(problemsToSave);
 
   vscode.window.showInformationMessage(
-    `数据库存储测试: ${result.message}${
-      result.insertedId ? ` (ID: ${result.insertedId})` : ""
-    }`
+    `已将当前问题列表写入数据库：${result.message}`
   );
 
   if (webview) {

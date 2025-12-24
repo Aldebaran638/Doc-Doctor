@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { checkFile, FunctionInfo } from "./fileCheck";
 import { checkFunction, ProblemInfo, ProblemType } from "./functionCheck";
+import { saveProblemsToDBBatch, setLastProblemsForDebug } from "./database";
 import {
   DocDoctorSettings,
   getDocDoctorSettings,
@@ -240,6 +241,31 @@ export async function runProjectCheck(webview?: vscode.Webview): Promise<void> {
           type: "projectCheckResult",
           result,
         });
+      }
+
+      // 记录最近一次检查的问题列表，供调试功能使用
+      if (result.success) {
+        setLastProblemsForDebug(result.problems);
+
+        // 自动将本次检查结果写入数据库，并输出提示
+        try {
+          const saveResult = await saveProblemsToDBBatch(result.problems);
+          const prefix =
+            result.problems.length > 0
+              ? "检查结果已保存到数据库："
+              : "数据库已同步为空结果：";
+
+          vscode.window.showInformationMessage(prefix + saveResult.message);
+
+          if (webview) {
+            webview.postMessage({
+              type: "databaseSaveResult",
+              result: saveResult,
+            });
+          }
+        } catch (e) {
+          console.error("[Doc-Doctor] 自动保存检查结果到数据库失败:", e);
+        }
       }
 
       return result;
