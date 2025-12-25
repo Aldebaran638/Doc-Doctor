@@ -384,27 +384,49 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
           }
           .filters {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             align-items: center;
           }
+          .filters vscode-text-field {
+            flex: 1 1 150px;
+            min-width: 120px;
+          }
+          .filters vscode-dropdown {
+            flex: 0 0 auto;
+          }
           #problem-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 10px;
             margin-top: 10px;
-            max-height: 420px;
+            max-height: 500px;
             overflow-y: auto;
+            padding: 2px;
+          }
+          /* 窄屏时单列 */
+          @media (max-width: 320px) {
+            #problem-list {
+              grid-template-columns: 1fr;
+            }
           }
           .problem-card {
             background: var(--vscode-editor-background);
             border: 1px solid var(--vscode-widget-border);
-            padding: 8px;
-            border-radius: 6px;
+            padding: 10px 12px;
+            border-radius: 8px;
             cursor: pointer;
             position: relative;
+            transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
           }
           .problem-card:hover {
             background: var(--vscode-list-hoverBackground);
+            border-color: var(--vscode-focusBorder);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
           }
           .problem-card.completed {
             opacity: 0.5;
@@ -463,6 +485,12 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
             font-size: 12px;
             margin-top: 6px;
             font-weight: 500;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
           }
           .empty-state {
             text-align: center;
@@ -488,6 +516,27 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
             width: 100%;
             margin-bottom: 5px;
           }
+          /* 宽屏时按钮可并排 */
+          .btn-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .btn-row vscode-button {
+            flex: 1 1 120px;
+            min-width: 100px;
+          }
+          /* 宽屏时设置区域双列 */
+          @media (min-width: 400px) {
+            .settings-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 16px;
+            }
+            .settings-grid .full-width {
+              grid-column: 1 / -1;
+            }
+          }
         </style>
       </head>
       <body>
@@ -500,8 +549,10 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
             <vscode-panel-view id="view-1">
                 <div class="container">
                     <h3>核心检查</h3>
-                    <vscode-button id="run-check" appearance="secondary">检查单个文件</vscode-button>
-                    <vscode-button id="run-project-check" appearance="primary">检查整个项目</vscode-button>
+                    <div class="btn-row">
+                      <vscode-button id="run-check" appearance="secondary">检查单个文件</vscode-button>
+                      <vscode-button id="run-project-check" appearance="primary">检查整个项目</vscode-button>
+                    </div>
                     <vscode-button id="cancel-check" appearance="secondary" style="display:none;">取消检查</vscode-button>
 
                     <vscode-divider></vscode-divider>
@@ -561,8 +612,10 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                     <vscode-divider></vscode-divider>
                     
                     <h3>数据库测试</h3>
-                    <vscode-button id="test-save-db" appearance="secondary">测试存储</vscode-button>
-                    <vscode-button id="test-load-db" appearance="secondary">测试读取</vscode-button>
+                    <div class="btn-row">
+                      <vscode-button id="test-save-db" appearance="secondary">测试存储</vscode-button>
+                      <vscode-button id="test-load-db" appearance="secondary">测试读取</vscode-button>
+                    </div>
                 </div>
             </vscode-panel-view>
         </vscode-panels>
