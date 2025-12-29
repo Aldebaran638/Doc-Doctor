@@ -10,6 +10,7 @@ import {
   loadProblemsFromDB,
   initDB,
 } from "./modules/database";
+import { generateCommentWithAI } from "./modules/aiRefactor";
 
 // 注册侧边栏 WebviewViewProvider
 class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
@@ -62,6 +63,7 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
 
     // 监听来自 Webview 的消息，用于触发各个模块的测试功能
     webviewView.webview.onDidReceiveMessage(async (message: any) => {
+      console.log("[Doc-Doctor] 收到 Webview 消息:", message?.type, message);
       switch (message?.type) {
         case "requestSettings": {
           // Webview 主动请求当前配置，用于初始化设置页
@@ -89,6 +91,63 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
         case "testLoadFromDatabase":
           await testLoadFromDatabase(webviewView.webview);
           break;
+        case "aiFixComment": {
+          console.log("[Doc-Doctor] 收到 AI 修复请求");
+          (async () => {
+            try {
+              const problem = message?.data?.problem as any;
+              if (!problem) {
+                throw new Error("未传入有效的问题信息");
+              }
+              const result = await generateCommentWithAI(problem);
+              console.log("[Doc-Doctor] AI 修复完成，已生成注释预览");
+              webviewView.webview.postMessage({
+                type: "aiFixPreview",
+                data: {
+                  problem,
+                  newComment: result.newComment,
+                },
+              });
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : String(err ?? "未知错误");
+              console.error("[Doc-Doctor] AI 修复注释失败:", msg);
+              vscode.window.showErrorMessage(`AI 修复注释失败：${msg}`);
+              webviewView.webview.postMessage({
+                type: "aiFixError",
+                message: msg,
+              });
+            }
+          })();
+          break;
+        }
+        case "aiFixComment": {
+          (async () => {
+            try {
+              const problem = message?.data?.problem as any;
+              if (!problem) {
+                throw new Error("未传入有效的问题信息");
+              }
+              const result = await generateCommentWithAI(problem);
+              webviewView.webview.postMessage({
+                type: "aiFixPreview",
+                data: {
+                  problem,
+                  newComment: result.newComment,
+                },
+              });
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : String(err ?? "未知错误");
+              vscode.window.showErrorMessage(`AI 修复注释失败：${msg}`);
+              webviewView.webview.postMessage({
+                type: "aiFixError",
+                message: msg,
+              });
+            }
+          })();
+          break;
+        }
         case "jumpToProblem": {
           const filePath = message?.data?.filePath;
           const line = message?.data?.line;

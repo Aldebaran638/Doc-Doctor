@@ -44,9 +44,30 @@ export async function checkFile(uri: vscode.Uri): Promise<ParseResult> {
       error: (err as Error).message,
     };
   }
+  return parseFileContent(content, filePath);
+}
+
+/**
+ * 直接根据给定的文件内容进行解析，返回函数信息列表。
+ *
+ * 供 Git 旧版本内容解析等场景复用，避免重复实现解析逻辑。
+ */
+export function parseFileContent(
+  fileContent: string,
+  filePath: string
+): ParseResult {
+  if (!filePath.endsWith(".c") && !filePath.endsWith(".cpp")) {
+    return {
+      success: false,
+      functions: [],
+      errorCode: "UNSUPPORTED_FILE_TYPE",
+      error: "仅支持 .c / .cpp 文件",
+    };
+  }
 
   // 解析函数定义并提取 Doxygen 注释
   const functions: FunctionInfo[] = [];
+  const content = fileContent;
   const regex = /([\w\s\*]+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*\{/g;
   let match: RegExpExecArray | null;
 

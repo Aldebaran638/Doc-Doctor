@@ -19,6 +19,26 @@
     "configuration": {
       "title": "Doc-Doctor",
       "properties": {
+        "doc-doctor.enableGitChangeWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用基于 Git 的函数内容变更警告（problem_type = 4）。仅在项目检查中对 .c 文件生效。"
+        },
+        "doc-doctor.enableAIRefactor": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否启用 AI 辅助更新注释功能。在问题卡片上显示“AI 修复注释”按钮并调用外部 AI 接口。"
+        },
+        "doc-doctor.ai.endpoint": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "AI 服务的 HTTP 接口地址。例如自建模型网关或 OpenAI 兼容接口的 URL。仅在 enableAIRefactor 为 true 时使用。"
+        },
+        "doc-doctor.ai.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "调用 AI 服务使用的 API Key。建议通过 VS Code 设置安全存储。仅在 enableAIRefactor 为 true 时使用。"
+        },
         "doc-doctor.checkMainFunction": {
           "type": "boolean",
           "default": false,
