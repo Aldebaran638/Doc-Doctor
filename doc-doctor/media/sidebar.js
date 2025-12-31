@@ -589,6 +589,15 @@
 
     currentSource = 'database';
     currentProblems = Array.isArray(result.problems) ? result.problems : [];
+    
+    // 重建 completedIds 集合：从数据库加载的问题中，status=1 表示已完成
+    completedIds.clear();
+    currentProblems.forEach(function (p) {
+      if (p.status === 1) {
+        completedIds.add(getProblemId(p));
+      }
+    });
+    
     currentSummary =
       '✅ ' + result.message + '\n\n' +
       '=== 数据库中的问题 ===\n' +
