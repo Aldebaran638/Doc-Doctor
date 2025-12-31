@@ -13,6 +13,7 @@ import {
   ProblemStatus,
 } from "./modules/database";
 import { generateCommentWithAI, applyAIFixToFile } from "./modules/aiRefactor";
+import { initSecretStorage, getApiKey, setApiKey } from "./modules/secretStorage";
 
 // 注册侧边栏 WebviewViewProvider
 class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
@@ -171,6 +172,41 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                 vscode.window.showInformationMessage(
                   `AI 修复已应用到文件：${problem.filePath}`
                 );
+                
+                // 如果问题有 id，自动更新状态为已完成
+                if (problem.id != null && typeof problem.id === "number") {
+                  try {
+                    const updateSuccess = await updateProblemStatusInDB(
+                      problem.id,
+                      ProblemStatus.IGNORED
+                    );
+                    if (updateSuccess) {
+                      console.log(
+                        `[Doc-Doctor] 问题状态已自动更新为已完成: id=${problem.id}`
+                      );
+                      // 通知前端更新状态
+                      webviewView.webview.postMessage({
+                        type: "problemStatusUpdated",
+                        data: {
+                          id: problem.id,
+                          status: ProblemStatus.IGNORED,
+                          success: true,
+                        },
+                      });
+                    } else {
+                      console.warn(
+                        `[Doc-Doctor] 自动更新问题状态失败: id=${problem.id}`
+                      );
+                    }
+                  } catch (statusError) {
+                    console.error(
+                      `[Doc-Doctor] 更新问题状态时发生异常:`,
+                      statusError
+                    );
+                    // 状态更新失败不影响主流程，继续执行
+                  }
+                }
+                
                 webviewView.webview.postMessage({
                   type: "aiFixApplied",
                   data: {
@@ -316,11 +352,10 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                 vscode.ConfigurationTarget.Workspace
               );
 
-              await config.update(
-                "ai.apiKey",
-                settings?.aiApiKey?.trim() || "",
-                vscode.ConfigurationTarget.Workspace
-              );
+              // API Key 使用 SecretStorage 安全存储
+              if (settings?.aiApiKey !== undefined) {
+                await setApiKey(settings.aiApiKey?.trim() || undefined);
+              }
 
               await config.update(
                 "ai.model",
@@ -509,7 +544,8 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
     // 读取 AI 相关配置
     const aiEnabled = config.get<boolean>("enableAIRefactor", false);
     const aiEndpoint = config.get<string>("ai.endpoint", "");
-    const aiApiKey = config.get<string>("ai.apiKey", "");
+    // API Key 从 SecretStorage 读取
+    const aiApiKey = (await getApiKey()) || "";
     const aiModel = config.get<string>("ai.model", "gpt-4");
     const aiTemperature = config.get<number>("ai.temperature", 0.7);
     const aiTimeout = config.get<number>("ai.timeout", 60000);
@@ -1222,6 +1258,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化数据库模块（加载 C++ DLL）
   initDB(context.extensionUri);
+
+  // 初始化 SecretStorage 模块（用于安全存储 API Key）
+  initSecretStorage(context);
 
   // 该命令已在 package.json 文件中定义
   // 现在通过 registerCommand 提供命令的具体实现

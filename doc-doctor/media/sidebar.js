@@ -416,21 +416,20 @@
         break;
       case 'aiFixApplied':
         appendLog('✅ AI修复已应用到文件');
-        // 可选：刷新问题列表
+        // 如果问题有 id，自动更新为已完成状态（双重保障，后端也会发送 problemStatusUpdated）
+        if (message.data && message.data.problem) {
+          const problem = message.data.problem;
+          const problemId = getProblemId(problem);
+          if (problemId != null) {
+            completedIds.add(problemId);
+            renderProblems();
+          }
+        }
         break;
       case 'aiFixError':
         appendLog('❌ AI修复失败: ' + (message.message || '未知错误'));
         hideAIFixLoading();
-        // 恢复按钮状态
-        if (currentAIFixProblem) {
-          const problemId = getProblemId(currentAIFixProblem);
-          const button = document.getElementById(`ai-fix-btn-${problemId}`);
-          if (button) {
-            button.disabled = false;
-            button.textContent = 'AI修复注释';
-            button.classList.remove('loading');
-          }
-        }
+        // hideAIFixLoading 已经处理了按钮状态恢复，这里不需要重复处理
         break;
     }
   });
@@ -825,11 +824,17 @@
     currentAIFixProblem = problem;
     aiFixLoading = true;
     
-    // 更新按钮状态为加载中
-    if (buttonElement) {
-      buttonElement.disabled = true;
-      buttonElement.textContent = '生成中...';
-      buttonElement.classList.add('loading');
+    // 更新按钮状态为加载中（通过 ID 获取，确保即使重新渲染也能找到）
+    const problemId = getProblemId(problem);
+    const button = buttonElement || document.getElementById(`ai-fix-btn-${problemId}`);
+    if (button) {
+      button.disabled = true;
+      button.textContent = '生成中...';
+      button.classList.add('loading');
+      // 强制触发重绘，确保状态更新立即生效
+      button.style.pointerEvents = 'none';
+    } else {
+      console.warn('[AI修复] 无法找到按钮元素，problemId:', problemId);
     }
     
     appendLog('正在请求AI生成注释...');
@@ -850,6 +855,7 @@
       button.disabled = false;
       button.textContent = 'AI修复注释';
       button.classList.remove('loading');
+      button.style.pointerEvents = '';
     }
     
     const problem = data.problem;
@@ -1103,12 +1109,17 @@
           transition: all 0.2s ease;
           font-weight: 500;
         }
-        .ai-fix-btn:hover {
+        .ai-fix-btn:hover:not(:disabled) {
           background: var(--vscode-button-secondaryHoverBackground);
           transform: translateY(-1px);
         }
-        .ai-fix-btn:active {
+        .ai-fix-btn:active:not(:disabled) {
           transform: translateY(0);
+        }
+        .ai-fix-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          pointer-events: none;
         }
         @media (max-width: 600px) {
           .ai-fix-modal {
@@ -1189,6 +1200,7 @@
         button.disabled = false;
         button.textContent = 'AI修复注释';
         button.classList.remove('loading');
+        button.style.pointerEvents = '';
       }
     }
     currentAIFixProblem = null;

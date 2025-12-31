@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { ProblemInfo, ProblemType } from "./functionCheck";
 import { parseFileContent, FunctionInfo } from "./fileCheck";
 import * as gitExtension from "../git";
+import { getApiKey } from "./secretStorage";
 
 export interface AIFixResult {
   newComment: string;
@@ -286,7 +287,8 @@ export async function generateCommentWithAI(
   }
 
   const endpoint = config.get<string>("ai.endpoint", "");
-  const apiKey = config.get<string>("ai.apiKey", "");
+  // API Key 从 SecretStorage 读取
+  const apiKey = (await getApiKey()) || "";
   const model = config.get<string>("ai.model", "gpt-4");
   const temperature = config.get<number>("ai.temperature", 0.7);
   const timeout = config.get<number>("ai.timeout", 60000);

@@ -37,7 +37,7 @@
         "doc-doctor.ai.apiKey": {
           "type": "string",
           "default": "",
-          "markdownDescription": "调用 AI 服务使用的 API Key。建议通过 VS Code 设置安全存储。仅在 enableAIRefactor 为 true 时使用。"
+          "markdownDescription": "调用 AI 服务使用的 API Key（已弃用）。API Key 现在使用 SecretStorage 安全存储，不会保存在此配置中。如需设置 API Key，请在插件设置页面输入，系统会自动使用 SecretStorage 加密存储。仅在 enableAIRefactor 为 true 时使用。"
         },
         "doc-doctor.ai.model": {
           "type": "string",
