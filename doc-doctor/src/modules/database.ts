@@ -90,7 +90,7 @@ export function initDB(extensionUri: vscode.Uri): boolean {
     koffi = require("koffi");
 
     // 构建 DLL 路径
-    const dllPath = path.join(
+    let dllPath = path.join(
       extensionUri.fsPath,
       "native",
       "build",
@@ -98,13 +98,24 @@ export function initDB(extensionUri: vscode.Uri): boolean {
       "doc_doctor_db.dll"
     );
 
-    // 检查 DLL 是否存在
+    // 测试环境中扩展路径为 out/test/**，此时优先使用指定的构建输出
     if (!fs.existsSync(dllPath)) {
-      console.error(`[Database] DLL not found: ${dllPath}`);
-      vscode.window.showWarningMessage(
-        `数据库模块未找到 DLL: ${dllPath}，将使用模拟数据`
+      const fallbackDllPath = path.join(
+        "D:\\Coding\\Doc-Doctor\\doc-doctor",
+        "native",
+        "build",
+        "Release",
+        "doc_doctor_db.dll"
       );
-      return false;
+      if (fs.existsSync(fallbackDllPath)) {
+        dllPath = fallbackDllPath;
+      } else {
+        console.error(`[Database] DLL not found: ${dllPath}`);
+        vscode.window.showWarningMessage(
+          `数据库模块未找到 DLL: ${dllPath}，将使用模拟数据`
+        );
+        return false;
+      }
     }
 
     // 加载动态库

@@ -39,6 +39,23 @@
           "default": "",
           "markdownDescription": "调用 AI 服务使用的 API Key。建议通过 VS Code 设置安全存储。仅在 enableAIRefactor 为 true 时使用。"
         },
+        "doc-doctor.ai.model": {
+          "type": "string",
+          "default": "gpt-4",
+          "description": "AI 模型名称。例如：gpt-4, gpt-4-turbo-preview, gpt-3.5-turbo 等。仅在 enableAIRefactor 为 true 时使用。"
+        },
+        "doc-doctor.ai.temperature": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "AI 生成的随机性（温度参数），范围 0-2。值越高越随机，值越低越确定。仅在 enableAIRefactor 为 true 时使用。"
+        },
+        "doc-doctor.ai.timeout": {
+          "type": "number",
+          "default": 60000,
+          "description": "AI API 请求超时时间（毫秒），默认 60 秒。仅在 enableAIRefactor 为 true 时使用。"
+        },
         "doc-doctor.checkMainFunction": {
           "type": "boolean",
           "default": false,

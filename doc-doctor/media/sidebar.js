@@ -20,6 +20,12 @@
   const settingFileWhitelist = document.getElementById('setting-file-whitelist');
   const settingFuncWhitelist = document.getElementById('setting-func-whitelist');
   const settingReturnTypeWhitelist = document.getElementById('setting-returntype-whitelist');
+  const settingAIEnable = document.getElementById('setting-ai-enable');
+  const settingAIEndpoint = document.getElementById('setting-ai-endpoint');
+  const settingAIApiKey = document.getElementById('setting-ai-apikey');
+  const settingAIModel = document.getElementById('setting-ai-model');
+  const settingAITemperature = document.getElementById('setting-ai-temperature');
+  const settingAITimeout = document.getElementById('setting-ai-timeout');
 
   /** @type {Array<any>} */
   let currentProblems = [];
@@ -332,7 +338,13 @@
         checkMain: settingCheckMain ? settingCheckMain.checked : false,
         fileWhitelist: settingFileWhitelist ? settingFileWhitelist.value : '',
         funcWhitelist: settingFuncWhitelist ? settingFuncWhitelist.value : '',
-        returnTypeWhitelist: settingReturnTypeWhitelist ? settingReturnTypeWhitelist.value : ''
+        returnTypeWhitelist: settingReturnTypeWhitelist ? settingReturnTypeWhitelist.value : '',
+        aiEnabled: settingAIEnable ? settingAIEnable.checked : false,
+        aiEndpoint: settingAIEndpoint ? settingAIEndpoint.value : '',
+        aiApiKey: settingAIApiKey ? settingAIApiKey.value : '',
+        aiModel: settingAIModel ? settingAIModel.value : 'gpt-4',
+        aiTemperature: settingAITemperature ? parseFloat(settingAITemperature.value) || 0.7 : 0.7,
+        aiTimeout: settingAITimeout ? parseInt(settingAITimeout.value) || 60000 : 60000
       };
       vscode.postMessage({ type: 'saveSettings', data: settings });
       appendLog('正在保存设置...');
@@ -409,6 +421,16 @@
       case 'aiFixError':
         appendLog('❌ AI修复失败: ' + (message.message || '未知错误'));
         hideAIFixLoading();
+        // 恢复按钮状态
+        if (currentAIFixProblem) {
+          const problemId = getProblemId(currentAIFixProblem);
+          const button = document.getElementById(`ai-fix-btn-${problemId}`);
+          if (button) {
+            button.disabled = false;
+            button.textContent = 'AI修复注释';
+            button.classList.remove('loading');
+          }
+        }
         break;
     }
   });
@@ -429,6 +451,25 @@
         typeof data.returnTypeWhitelistText === 'string'
       ) {
         settingReturnTypeWhitelist.value = data.returnTypeWhitelistText;
+      }
+      // AI 配置
+      if (settingAIEnable && typeof data.aiEnabled === 'boolean') {
+        settingAIEnable.checked = data.aiEnabled;
+      }
+      if (settingAIEndpoint && typeof data.aiEndpoint === 'string') {
+        settingAIEndpoint.value = data.aiEndpoint;
+      }
+      if (settingAIApiKey && typeof data.aiApiKey === 'string') {
+        settingAIApiKey.value = data.aiApiKey;
+      }
+      if (settingAIModel && typeof data.aiModel === 'string') {
+        settingAIModel.value = data.aiModel;
+      }
+      if (settingAITemperature && typeof data.aiTemperature === 'number') {
+        settingAITemperature.value = String(data.aiTemperature);
+      }
+      if (settingAITimeout && typeof data.aiTimeout === 'number') {
+        settingAITimeout.value = String(data.aiTimeout);
       }
     } catch (e) {
       appendLog('初始化设置时出错: ' + e);
@@ -701,11 +742,12 @@
       if (problemTypeNum >= 1 && problemTypeNum <= 4) {
         const aiFixBtn = document.createElement('button');
         aiFixBtn.className = 'ai-fix-btn';
+        aiFixBtn.id = `ai-fix-btn-${getProblemId(p)}`;
         aiFixBtn.textContent = 'AI修复注释';
         aiFixBtn.title = '使用AI生成或更新注释';
         aiFixBtn.addEventListener('click', function (e) {
           e.stopPropagation();
-          handleAIFixClick(p);
+          handleAIFixClick(p, aiFixBtn);
         });
         card.appendChild(aiFixBtn);
       }
@@ -763,8 +805,9 @@
   // AI修复相关函数
   let aiFixLoading = false;
   let currentAIFixProblem = null;
+  let currentAIFixNewComment = null; // 保存当前预览的新注释内容
 
-  function handleAIFixClick(problem) {
+  function handleAIFixClick(problem, buttonElement) {
     if (aiFixLoading) {
       appendLog('AI修复请求正在进行中，请稍候...');
       return;
@@ -772,6 +815,14 @@
 
     currentAIFixProblem = problem;
     aiFixLoading = true;
+    
+    // 更新按钮状态为加载中
+    if (buttonElement) {
+      buttonElement.disabled = true;
+      buttonElement.textContent = '生成中...';
+      buttonElement.classList.add('loading');
+    }
+    
     appendLog('正在请求AI生成注释...');
 
     // 发送AI修复请求
@@ -783,8 +834,21 @@
 
   function showAIFixPreview(data) {
     aiFixLoading = false;
+    // 恢复按钮状态
+    const problemId = getProblemId(data.problem);
+    const button = document.getElementById(`ai-fix-btn-${problemId}`);
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'AI修复注释';
+      button.classList.remove('loading');
+    }
+    
     const problem = data.problem;
     const newComment = data.newComment;
+    const oldComment = data.oldComment || '';
+    
+    // 保存新注释内容供 applyAIFix 使用
+    currentAIFixNewComment = newComment;
 
     // 创建预览模态框
     const modal = document.createElement('div');
@@ -793,7 +857,7 @@
       <div class="ai-fix-modal-content">
         <div class="ai-fix-modal-header">
           <h3>AI修复注释预览</h3>
-          <button class="ai-fix-close-btn" onclick="this.closest('.ai-fix-modal').remove()">×</button>
+          <button class="ai-fix-close-btn">×</button>
         </div>
         <div class="ai-fix-modal-body">
           <div class="ai-fix-section">
@@ -803,13 +867,23 @@
             <p><strong>行号:</strong> ${problem.lineNumber || '?'}</p>
           </div>
           <div class="ai-fix-section">
-            <h4>新注释内容</h4>
-            <pre class="ai-fix-comment-preview">${escapeHtml(newComment)}</pre>
+            <h4>注释对比</h4>
+            <div class="ai-fix-comment-compare">
+              <div class="ai-fix-comment-old">
+                <div class="ai-fix-comment-label">原始注释</div>
+                <pre class="ai-fix-comment-preview">${oldComment ? escapeHtml(oldComment) : '<em style="opacity: 0.6;">（无注释）</em>'}</pre>
+              </div>
+              <div class="ai-fix-comment-arrow">→</div>
+              <div class="ai-fix-comment-new">
+                <div class="ai-fix-comment-label">新注释</div>
+                <pre class="ai-fix-comment-preview">${escapeHtml(newComment)}</pre>
+              </div>
+            </div>
           </div>
         </div>
         <div class="ai-fix-modal-footer">
-          <button class="ai-fix-cancel-btn" onclick="this.closest('.ai-fix-modal').remove()">取消</button>
-          <button class="ai-fix-apply-btn" onclick="applyAIFix()">应用修改</button>
+          <button class="ai-fix-cancel-btn">取消</button>
+          <button class="ai-fix-apply-btn">应用修改</button>
         </div>
       </div>
     `;
@@ -897,6 +971,28 @@
           font-size: 13px;
           line-height: 1.6;
         }
+        .ai-fix-comment-compare {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          gap: 16px;
+          align-items: start;
+          margin-top: 8px;
+        }
+        .ai-fix-comment-old, .ai-fix-comment-new {
+          flex: 1;
+        }
+        .ai-fix-comment-label {
+          font-size: 12px;
+          font-weight: 600;
+          margin-bottom: 8px;
+          color: var(--vscode-descriptionForeground);
+        }
+        .ai-fix-comment-arrow {
+          font-size: 20px;
+          color: var(--vscode-foreground);
+          align-self: center;
+          padding-top: 24px;
+        }
         .ai-fix-comment-preview {
           background: var(--vscode-textCodeBlock-background);
           padding: 16px;
@@ -908,7 +1004,50 @@
           word-wrap: break-word;
           line-height: 1.6;
           border: 1px solid var(--vscode-widget-border);
-          margin-top: 8px;
+          margin: 0;
+          min-height: 80px;
+          max-height: 400px;
+          overflow-y: auto;
+        }
+        .ai-fix-comment-old .ai-fix-comment-preview {
+          border-color: var(--vscode-inputValidation-warningBorder, #ff9800);
+        }
+        .ai-fix-comment-new .ai-fix-comment-preview {
+          border-color: var(--vscode-inputValidation-infoBorder, #2196f3);
+        }
+        @media (max-width: 700px) {
+          .ai-fix-comment-compare {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+          .ai-fix-comment-arrow {
+            transform: rotate(90deg);
+            align-self: center;
+            padding: 0;
+          }
+        }
+        .ai-fix-btn.loading {
+          opacity: 0.7;
+          cursor: not-allowed;
+          position: relative;
+        }
+        .ai-fix-btn.loading::after {
+          content: '';
+          position: absolute;
+          width: 12px;
+          height: 12px;
+          margin: auto;
+          border: 2px solid transparent;
+          border-top-color: currentColor;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          right: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+        }
+        @keyframes spin {
+          0% { transform: translateY(-50%) rotate(0deg); }
+          100% { transform: translateY(-50%) rotate(360deg); }
         }
         .ai-fix-modal-footer {
           padding: 20px 24px;
@@ -987,24 +1126,44 @@
       document.head.appendChild(style);
     }
 
+    // 添加事件监听器
+    modal.addEventListener('click', function(e) {
+      const target = e.target;
+      if (target.classList.contains('ai-fix-close-btn')) {
+        currentAIFixNewComment = null;
+        modal.remove();
+      } else if (target.classList.contains('ai-fix-cancel-btn')) {
+        currentAIFixNewComment = null;
+        modal.remove();
+      } else if (target.classList.contains('ai-fix-apply-btn')) {
+        applyAIFix();
+      }
+    });
+
     // 添加应用修改函数到全局
     window.applyAIFix = function() {
-      if (!currentAIFixProblem) {
+      if (!currentAIFixProblem || !currentAIFixNewComment) {
+        appendLog('❌ 无法应用修复：缺少问题信息或注释内容');
         return;
       }
       const modal = document.querySelector('.ai-fix-modal');
-      const newComment = modal.querySelector('.ai-fix-comment-preview').textContent;
+      if (!modal) {
+        appendLog('❌ 无法找到预览模态框');
+        return;
+      }
       
       vscode.postMessage({
         type: 'applyAIFix',
         data: {
           problem: currentAIFixProblem,
-          newComment: newComment
+          newComment: currentAIFixNewComment
         }
       });
 
       modal.remove();
+      const problemId = getProblemId(currentAIFixProblem);
       currentAIFixProblem = null;
+      currentAIFixNewComment = null;
       appendLog('正在应用AI修复...');
     };
 
@@ -1013,7 +1172,18 @@
 
   function hideAIFixLoading() {
     aiFixLoading = false;
+    // 恢复所有按钮状态
+    if (currentAIFixProblem) {
+      const problemId = getProblemId(currentAIFixProblem);
+      const button = document.getElementById(`ai-fix-btn-${problemId}`);
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'AI修复注释';
+        button.classList.remove('loading');
+      }
+    }
     currentAIFixProblem = null;
+    currentAIFixNewComment = null;
   }
 
   function escapeHtml(text) {

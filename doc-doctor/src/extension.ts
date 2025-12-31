@@ -120,6 +120,18 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
               if (!problem) {
                 throw new Error("未传入有效的问题信息");
               }
+              // 获取函数上下文以获取旧注释
+              const { getFunctionContextFromProblem } = await import(
+                "./modules/aiRefactor.js"
+              );
+              let oldComment: string | undefined = undefined;
+              try {
+                const funcInfo = await getFunctionContextFromProblem(problem);
+                oldComment = funcInfo.comment;
+              } catch {
+                // 如果获取失败，继续处理，oldComment 为 undefined
+              }
+              
               const result = await generateCommentWithAI(problem);
               console.log("[Doc-Doctor] AI 修复完成，已生成注释预览");
               webviewView.webview.postMessage({
@@ -127,39 +139,13 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                 data: {
                   problem,
                   newComment: result.newComment,
+                  oldComment: oldComment || "",
                 },
               });
             } catch (err) {
               const msg =
                 err instanceof Error ? err.message : String(err ?? "未知错误");
               console.error("[Doc-Doctor] AI 修复注释失败:", msg);
-              vscode.window.showErrorMessage(`AI 修复注释失败：${msg}`);
-              webviewView.webview.postMessage({
-                type: "aiFixError",
-                message: msg,
-              });
-            }
-          })();
-          break;
-        }
-        case "aiFixComment": {
-          (async () => {
-            try {
-              const problem = message?.data?.problem as any;
-              if (!problem) {
-                throw new Error("未传入有效的问题信息");
-              }
-              const result = await generateCommentWithAI(problem);
-              webviewView.webview.postMessage({
-                type: "aiFixPreview",
-                data: {
-                  problem,
-                  newComment: result.newComment,
-                },
-              });
-            } catch (err) {
-              const msg =
-                err instanceof Error ? err.message : String(err ?? "未知错误");
               vscode.window.showErrorMessage(`AI 修复注释失败：${msg}`);
               webviewView.webview.postMessage({
                 type: "aiFixError",
@@ -233,6 +219,12 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
               fileWhitelist?: string;
               funcWhitelist?: string;
               returnTypeWhitelist?: string;
+              aiEnabled?: boolean;
+              aiEndpoint?: string;
+              aiApiKey?: string;
+              aiModel?: string;
+              aiTemperature?: number;
+              aiTimeout?: number;
             };
 
             console.log("[Doc-Doctor] 保存设置:", settings);
@@ -310,6 +302,51 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                 returnTypeWhitelistArray,
                 vscode.ConfigurationTarget.Workspace
               );
+
+              // 5. AI 修复配置
+              await config.update(
+                "enableAIRefactor",
+                !!settings?.aiEnabled,
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              await config.update(
+                "ai.endpoint",
+                settings?.aiEndpoint?.trim() || "",
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              await config.update(
+                "ai.apiKey",
+                settings?.aiApiKey?.trim() || "",
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              await config.update(
+                "ai.model",
+                settings?.aiModel?.trim() || "gpt-4",
+                vscode.ConfigurationTarget.Workspace
+              );
+
+              const temperature = settings?.aiTemperature;
+              if (temperature !== undefined && temperature !== null) {
+                const tempValue = Math.max(0, Math.min(2, Number(temperature)));
+                await config.update(
+                  "ai.temperature",
+                  tempValue,
+                  vscode.ConfigurationTarget.Workspace
+                );
+              }
+
+              const timeout = settings?.aiTimeout;
+              if (timeout !== undefined && timeout !== null) {
+                const timeoutValue = Math.max(1000, Number(timeout)); // 最少1秒
+                await config.update(
+                  "ai.timeout",
+                  timeoutValue,
+                  vscode.ConfigurationTarget.Workspace
+                );
+              }
 
               vscode.window.showInformationMessage("Doc-Doctor 设置已保存");
 
@@ -469,6 +506,14 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
       }
     }
 
+    // 读取 AI 相关配置
+    const aiEnabled = config.get<boolean>("enableAIRefactor", false);
+    const aiEndpoint = config.get<string>("ai.endpoint", "");
+    const aiApiKey = config.get<string>("ai.apiKey", "");
+    const aiModel = config.get<string>("ai.model", "gpt-4");
+    const aiTemperature = config.get<number>("ai.temperature", 0.7);
+    const aiTimeout = config.get<number>("ai.timeout", 60000);
+
     webview.postMessage({
       type: "initSettings",
       data: {
@@ -476,6 +521,12 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
         fileWhitelistText: fileWhitelistArray.join("\n"),
         funcWhitelistText: funcLines.join("\n"),
         returnTypeWhitelistText: returnTypeWhitelistArray.join("\n"),
+        aiEnabled,
+        aiEndpoint,
+        aiApiKey,
+        aiModel,
+        aiTemperature,
+        aiTimeout,
       },
     });
 
@@ -1000,7 +1051,8 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
           }
           vscode-checkbox {
             margin: 8px 0;
-            display: block;
+            display: flex;
+            align-items: center;
           }
           vscode-text-area {
             margin: 8px 0 16px 0;
@@ -1101,6 +1153,32 @@ class DocDoctorSidebarProvider implements vscode.WebviewViewProvider {
                     <h3>返回值类型白名单</h3>
                     <p style="font-size:12px;opacity:0.75;margin:0 0 12px 0;line-height:1.5;">每行一个返回值类型，例如 void、int 等</p>
                     <vscode-text-area id="setting-returntype-whitelist" rows="4" placeholder="void" resize="vertical"></vscode-text-area>
+                    
+                    <vscode-divider></vscode-divider>
+                    
+                    <h3>AI 修复配置</h3>
+                    <vscode-checkbox id="setting-ai-enable">启用 AI 修复注释功能</vscode-checkbox>
+                    <p style="font-size:12px;opacity:0.75;margin:8px 0 12px 0;line-height:1.5;">启用后可在问题卡片上使用 AI 生成或更新注释</p>
+                    
+                    <p style="font-size:13px;font-weight:500;margin:16px 0 8px 0;">API 接口地址</p>
+                    <vscode-text-field id="setting-ai-endpoint" placeholder="https://api.openai.com/v1/chat/completions"></vscode-text-field>
+                    <p style="font-size:12px;opacity:0.75;margin:4px 0 12px 0;line-height:1.5;">AI 服务的 HTTP 接口地址（OpenAI 或兼容接口）</p>
+                    
+                    <p style="font-size:13px;font-weight:500;margin:8px 0 8px 0;">API Key</p>
+                    <vscode-text-field id="setting-ai-apikey" type="password" placeholder="sk-..."></vscode-text-field>
+                    <p style="font-size:12px;opacity:0.75;margin:4px 0 12px 0;line-height:1.5;">调用 AI 服务使用的 API Key</p>
+                    
+                    <p style="font-size:13px;font-weight:500;margin:8px 0 8px 0;">模型名称</p>
+                    <vscode-text-field id="setting-ai-model" placeholder="gpt-4"></vscode-text-field>
+                    <p style="font-size:12px;opacity:0.75;margin:4px 0 12px 0;line-height:1.5;">例如：gpt-4, gpt-4-turbo-preview, gpt-3.5-turbo 等</p>
+                    
+                    <p style="font-size:13px;font-weight:500;margin:8px 0 8px 0;">温度参数 (0-2)</p>
+                    <vscode-text-field id="setting-ai-temperature" type="number" placeholder="0.7"></vscode-text-field>
+                    <p style="font-size:12px;opacity:0.75;margin:4px 0 12px 0;line-height:1.5;">值越高越随机，值越低越确定（默认 0.7）</p>
+                    
+                    <p style="font-size:13px;font-weight:500;margin:8px 0 8px 0;">超时时间（毫秒）</p>
+                    <vscode-text-field id="setting-ai-timeout" type="number" placeholder="60000"></vscode-text-field>
+                    <p style="font-size:12px;opacity:0.75;margin:4px 0 12px 0;line-height:1.5;">AI API 请求超时时间（默认 60000，即 60 秒）</p>
                     
                     <vscode-button id="save-settings" appearance="primary" style="margin-top:16px;">保存设置</vscode-button>
                 </div>

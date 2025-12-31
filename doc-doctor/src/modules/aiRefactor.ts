@@ -10,7 +10,7 @@ export interface AIFixResult {
 /**
  * 根据问题信息，从源码中重新解析并获取对应函数的完整上下文。
  */
-async function getFunctionContextFromProblem(
+export async function getFunctionContextFromProblem(
   problem: ProblemInfo
 ): Promise<FunctionInfo> {
   const uri = vscode.Uri.file(problem.filePath);
@@ -196,7 +196,82 @@ async function tryGetGitDiffSnippet(
 }
 
 /**
+ * 构造 OpenAI Chat Completion 格式的用户提示词
+ */
+function buildUserPrompt(
+  problem: ProblemInfo,
+  funcInfo: FunctionInfo,
+  language: "zh" | "en",
+  diffSnippet?: string
+): string {
+  const problemTypeLabels: Record<number, { zh: string; en: string }> = {
+    1: { zh: "参数缺失", en: "Missing parameter documentation" },
+    2: { zh: "返回值缺失", en: "Missing return value documentation" },
+    3: { zh: "函数功能说明缺失", en: "Missing function description" },
+    4: { zh: "内容变更警告", en: "Content change warning" },
+  };
+
+  const problemTypeLabel =
+    problemTypeLabels[problem.problemType]?.[language] ||
+    `${language === "zh" ? "问题类型" : "Problem type"}: ${problem.problemType}`;
+
+  const lang = language === "zh" ? "中文" : "English";
+
+  let prompt = `请根据以下函数信息生成或更新 Doxygen 格式的注释。要求使用${lang}。
+
+文件路径: ${problem.filePath}
+函数名: ${problem.functionName}
+函数签名: ${problem.functionSignature}
+问题类型: ${problemTypeLabel}
+
+函数代码:
+\`\`\`c
+${funcInfo.functionContent}
+\`\`\``;
+
+  if (funcInfo.comment) {
+    prompt += `\n\n现有注释:\n\`\`\`\n${funcInfo.comment}\n\`\`\``;
+  }
+
+  if (diffSnippet) {
+    prompt += `\n\n变更信息: ${diffSnippet}`;
+  }
+
+  prompt += `\n\n请生成完整的 Doxygen 格式注释，包含 @brief、@param（如有参数）、@return（如非 void 函数）等必要标签。只返回注释内容，不要包含其他说明文字。`;
+
+  return prompt;
+}
+
+/**
+ * 带超时的 fetch 请求
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: any,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      throw new Error(`请求超时（超过 ${timeoutMs / 1000} 秒）`);
+    }
+    throw error;
+  }
+}
+
+/**
  * 核心入口：根据单个问题调用外部 AI 接口生成新的注释内容，并做轻量格式校正。
+ * 使用 OpenAI Chat Completion API 格式。
  */
 export async function generateCommentWithAI(
   problem: ProblemInfo
@@ -212,6 +287,9 @@ export async function generateCommentWithAI(
 
   const endpoint = config.get<string>("ai.endpoint", "");
   const apiKey = config.get<string>("ai.apiKey", "");
+  const model = config.get<string>("ai.model", "gpt-4");
+  const temperature = config.get<number>("ai.temperature", 0.7);
+  const timeout = config.get<number>("ai.timeout", 60000);
 
   if (!endpoint || !apiKey) {
     throw new Error(
@@ -223,17 +301,30 @@ export async function generateCommentWithAI(
   const language = detectLanguageFromComment(funcInfo.comment);
   const diffSnippet = await tryGetGitDiffSnippet(problem);
 
-  const payload = {
-    filePath: problem.filePath,
-    functionName: problem.functionName,
-    functionSignature: problem.functionSignature,
-    problemType: problem.problemType,
-    existingComment: funcInfo.comment,
-    functionBody: funcInfo.functionContent,
-    language,
-    gitDiff: diffSnippet,
+  // 构造 OpenAI Chat Completion 格式的请求
+  const systemMessage =
+    language === "zh"
+      ? "你是一个专业的代码注释生成助手，专门帮助生成符合 Doxygen 规范的函数注释。请根据函数代码和问题类型，生成准确、简洁的注释。"
+      : "You are a professional code documentation assistant that helps generate Doxygen-style function comments. Generate accurate and concise comments based on the function code and problem type.";
+
+  const userMessage = buildUserPrompt(problem, funcInfo, language, diffSnippet);
+
+  const openAIPayload = {
+    model: model,
+    messages: [
+      {
+        role: "system",
+        content: systemMessage,
+      },
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ],
+    temperature: Math.max(0, Math.min(2, temperature)), // 确保在 0-2 范围内
   };
 
+  // 检查 fetch 是否可用
   const globalFetch: any = (globalThis as any).fetch;
   if (typeof globalFetch !== "function") {
     throw new Error(
@@ -241,19 +332,70 @@ export async function generateCommentWithAI(
     );
   }
 
-  const res = await globalFetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(openAIPayload),
+      },
+      timeout
+    );
+  } catch (error: any) {
+    // 网络错误、超时等
+    if (error.message.includes("超时")) {
+      throw error;
+    }
+    if (error.message.includes("fetch")) {
+      throw new Error(
+        `网络连接失败：${error.message}。请检查网络连接和 endpoint 配置。`
+      );
+    }
+    throw new Error(`AI 接口请求失败：${error.message}`);
+  }
 
   if (!res || !res.ok) {
     const status = res?.status ?? 0;
-    const text = res ? await res.text() : "";
-    throw new Error(`AI 接口调用失败，状态码 ${status}，响应：${text}`);
+    let errorText = "";
+    try {
+      errorText = await res.text();
+    } catch {
+      errorText = "无法读取错误响应";
+    }
+
+    // 根据状态码提供更详细的错误信息
+    let errorMessage = `AI 接口调用失败，状态码 ${status}`;
+    if (status === 401) {
+      errorMessage += "：API Key 无效或已过期";
+    } else if (status === 403) {
+      errorMessage += "：API Key 无权限访问该模型";
+    } else if (status === 404) {
+      errorMessage += "：接口地址不存在，请检查 endpoint 配置";
+    } else if (status === 429) {
+      errorMessage += "：请求频率过高，请稍后重试";
+    } else if (status >= 500) {
+      errorMessage += "：AI 服务端错误，请稍后重试";
+    }
+
+    if (errorText) {
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error?.message) {
+          errorMessage += `。详细信息：${errorJson.error.message}`;
+        } else {
+          errorMessage += `。响应：${errorText.substring(0, 200)}`;
+        }
+      } catch {
+        errorMessage += `。响应：${errorText.substring(0, 200)}`;
+      }
+    }
+
+    throw new Error(errorMessage);
   }
 
   let data: any;
@@ -263,9 +405,23 @@ export async function generateCommentWithAI(
     throw new Error("AI 接口返回内容无法解析为 JSON：" + (e as Error).message);
   }
 
-  const rawComment: string | undefined = data?.newComment ?? data?.comment;
+  // 解析 OpenAI Chat Completion 格式的响应
+  let rawComment: string | undefined;
+  if (data?.choices?.[0]?.message?.content) {
+    // OpenAI Chat Completion 格式
+    rawComment = data.choices[0].message.content.trim();
+  } else if (data?.newComment) {
+    // 兼容旧的自定义格式
+    rawComment = data.newComment;
+  } else if (data?.comment) {
+    // 兼容旧字段名
+    rawComment = data.comment;
+  }
+
   if (!rawComment || typeof rawComment !== "string") {
-    throw new Error("AI 接口返回内容中未包含 newComment 字段或类型不正确。");
+    throw new Error(
+      "AI 接口返回内容格式不正确。期望 OpenAI Chat Completion 格式（choices[0].message.content）或自定义格式（newComment/comment 字段）。"
+    );
   }
 
   const fixedComment = fixDoxygenComment(rawComment, funcInfo);

@@ -1,7 +1,7 @@
 # Doc-Doctor 测试报告
 
 **报告版本**：1.0  
-**执行日期**：2025-12-31  
+**执行日期**：2025-12-31
 **执行人**：Richard Liu
 
 ---
@@ -37,5 +37,5 @@
 
 1. `npm test` 过程中 eslint 存在 2 条警告（`curly` 规则），不影响测试结果。
 2. VS Code 测试日志出现 `Error mutex already exists`，未影响测试执行。
-3. 数据库 DLL 位于 `D:\Coding\Doc-Doctor\doc-doctor\native\build\Release`，测试进程未从该路径加载，已自动回退到 Mock 模式，相关测试仍通过。
+3. 数据库 DLL 已从 `D:\Coding\Doc-Doctor\doc-doctor\native\build\Release` 成功加载，测试使用真实数据库文件：`doc-doctor/test-fixtures/test-workspace/.doc-doctor/problems.db`。
 4. Git 变更检测未启用（测试环境无可用仓库），相关逻辑已自动跳过。
