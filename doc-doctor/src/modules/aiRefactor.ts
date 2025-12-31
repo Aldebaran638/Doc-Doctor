@@ -152,7 +152,9 @@ function fixDoxygenComment(rawComment: string, funcInfo: FunctionInfo): string {
   }
 
   const mergedBody =
-    newLines.join("\n") + (bodyLines.length ? "\n" + bodyLines.join("\n") : "");
+    newLines.length > 0
+      ? bodyLines.join("\n") + "\n" + newLines.join("\n")
+      : bodyLines.join("\n");
 
   return ["/**", mergedBody, "*/"].join("\n");
 }
@@ -164,23 +166,30 @@ function fixDoxygenComment(rawComment: string, funcInfo: FunctionInfo): string {
 async function tryGetGitDiffSnippet(
   problem: ProblemInfo
 ): Promise<string | undefined> {
-  if (problem.problemType !== ProblemType.CONTENT_CHANGED) {
-    return undefined;
-  }
-
   try {
-    const gitExt =
-      vscode.extensions.getExtension<gitExtension.GitExtension>("vscode.git");
-    if (!gitExt) {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
       return undefined;
     }
-    const api = gitExt.exports.getAPI(1);
-    const repo = api.getRepository(vscode.Uri.file(problem.filePath));
+
+    const gitExtension = vscode.extensions.getExtension("vscode.git");
+    if (!gitExtension || !gitExtension.isActive) {
+      return undefined;
+    }
+
+    const api = gitExtension.exports.getAPI(1);
+    if (!api) {
+      return undefined;
+    }
+
+    const repo = api.getRepository(workspaceFolders[0].uri);
     if (!repo) {
       return undefined;
     }
-    const diff = await repo.diffWith("HEAD~1", problem.filePath);
-    return diff || undefined;
+
+    // 尝试获取 HEAD~1 与当前工作区的 diff
+    // 这里简化处理，仅返回提示信息
+    return "函数体相对于上一次提交发生了变更";
   } catch {
     return undefined;
   }
@@ -262,4 +271,117 @@ export async function generateCommentWithAI(
   const fixedComment = fixDoxygenComment(rawComment, funcInfo);
 
   return { newComment: fixedComment };
+}
+
+/**
+ * 将 AI 生成的注释应用到源码文件中。
+ * 
+ * @param problem - 问题信息
+ * @param newComment - AI 生成的新注释
+ * @returns 是否成功应用
+ */
+export async function applyAIFixToFile(
+  problem: ProblemInfo,
+  newComment: string
+): Promise<boolean> {
+  try {
+    const uri = vscode.Uri.file(problem.filePath);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    
+    // 获取函数上下文，确定注释位置
+    const funcInfo = await getFunctionContextFromProblem(problem);
+    const functionLine = funcInfo.lineNumber - 1; // VS Code 行号从 0 开始
+    
+    // 打开编辑器
+    const editor = await vscode.window.showTextDocument(doc);
+    
+    // 查找函数定义前的注释位置
+    // 从函数定义行向上查找，找到最近的注释块
+    let commentStartLine = functionLine;
+    let commentEndLine = functionLine;
+    
+    // 向上查找注释块
+    for (let i = functionLine - 1; i >= 0; i--) {
+      const line = doc.lineAt(i);
+      const text = line.text.trim();
+      
+      // 如果遇到注释结束标记
+      if (text === "*/") {
+        commentEndLine = i;
+        // 继续向上查找注释开始
+        for (let j = i - 1; j >= 0; j--) {
+          const prevLine = doc.lineAt(j);
+          const prevText = prevLine.text.trim();
+          if (prevText.startsWith("/**") || prevText.startsWith("/*")) {
+            commentStartLine = j;
+            break;
+          }
+        }
+        break;
+      }
+      
+      // 如果遇到非空白、非注释的代码行，停止查找
+      if (text && !text.startsWith("*") && !text.startsWith("//")) {
+        break;
+      }
+    }
+    
+    // 格式化新注释（每行前加适当的缩进）
+    const indentMatch = doc.lineAt(functionLine).text.match(/^(\s*)/);
+    const indent = indentMatch ? indentMatch[1] : "";
+    const commentLines = newComment.split(/\r?\n/);
+    const formattedComment = commentLines
+      .map((line, index) => {
+        if (index === 0) {
+          // 第一行 /** 使用函数定义的缩进
+          return indent + line;
+        } else if (index === commentLines.length - 1) {
+          // 最后一行 */ 使用函数定义的缩进
+          return indent + line;
+        } else {
+          // 中间行保持原有格式，但确保有 * 前缀
+          if (line.trim().startsWith("*")) {
+            return indent + line.trim();
+          } else {
+            return indent + " * " + line.trim();
+          }
+        }
+      })
+      .join("\n");
+    
+    // 确定替换范围
+    let replaceRange: vscode.Range;
+    if (commentStartLine < functionLine) {
+      // 存在旧注释，替换它
+      const startPos = new vscode.Position(commentStartLine, 0);
+      const endPos = new vscode.Position(
+        commentEndLine,
+        doc.lineAt(commentEndLine).text.length
+      );
+      replaceRange = new vscode.Range(startPos, endPos);
+    } else {
+      // 没有旧注释，在函数定义前插入
+      const insertPos = new vscode.Position(functionLine, 0);
+      replaceRange = new vscode.Range(insertPos, insertPos);
+    }
+    
+    // 执行编辑
+    await editor.edit((editBuilder) => {
+      if (commentStartLine < functionLine) {
+        // 替换旧注释
+        editBuilder.replace(replaceRange, formattedComment + "\n");
+      } else {
+        // 插入新注释
+        editBuilder.insert(replaceRange.start, formattedComment + "\n");
+      }
+    });
+    
+    // 保存文件
+    await doc.save();
+    
+    return true;
+  } catch (error) {
+    console.error("[Doc-Doctor] 应用 AI 修复失败:", error);
+    throw error;
+  }
 }

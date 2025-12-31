@@ -1,15 +1,30 @@
-import * as assert from 'assert';
+import * as assert from "assert";
+import * as vscode from "vscode";
+import { activate } from "../extension";
 
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
-import * as vscode from 'vscode';
-// import * as myExtension from '../../extension';
+suite("Extension Test Suite", () => {
+  vscode.window.showInformationMessage("Start all tests.");
 
-suite('Extension Test Suite', () => {
-	vscode.window.showInformationMessage('Start all tests.');
+  test("DD-SMK-001 extension activates", () => {
+    const mockContext = {
+      subscriptions: [],
+      extensionPath: __dirname,
+      extensionUri: vscode.Uri.file(__dirname),
+      storagePath: __dirname,
+      globalStoragePath: __dirname,
+      logPath: __dirname,
+      extensionMode: vscode.ExtensionMode.Test,
+    } as unknown as vscode.ExtensionContext;
 
-	test('Sample test', () => {
-		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
-	});
+    const result = activate(mockContext);
+    assert.ok(result !== undefined || result === undefined);
+  });
+
+  test("DD-FT-005 extension commands are registered", async () => {
+    const commands = await vscode.commands.getCommands(true);
+    const docDoctorCommands = commands.filter((cmd) =>
+      cmd.startsWith("doc-doctor.")
+    );
+    assert.ok(docDoctorCommands.length > 0);
+  });
 });

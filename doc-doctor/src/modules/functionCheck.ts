@@ -142,11 +142,32 @@ function hasDoxygenBrief(comment: string): boolean {
   if (!comment) {
     return false;
   }
-  // 检查是否包含 @brief 标签，或者注释块中有非空内容
-  return (
-    /@brief\s+\S/.test(comment) ||
-    comment.replace(/\/\*\*?|\*\/|\*/g, "").trim().length > 0
-  );
+  if (/@brief\s+\S/.test(comment)) {
+    return true;
+  }
+
+  const lines = comment.split(/\r?\n/);
+  for (const line of lines) {
+    const cleaned = line
+      .replace(/^\s*\/\*\*?/, "")
+      .replace(/\*\/\s*$/, "")
+      .replace(/^\s*\*\s?/, "")
+      .trim();
+    if (!cleaned) {
+      continue;
+    }
+    if (/^@param\b/i.test(cleaned) || /^@return\b/i.test(cleaned)) {
+      continue;
+    }
+    if (/^@brief\b/i.test(cleaned)) {
+      return true;
+    }
+    if (!/^@/i.test(cleaned)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

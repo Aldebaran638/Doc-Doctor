@@ -32,10 +32,12 @@ export interface CheckAllResult {
  * 检查整个工作区的所有 C/C++ 文件
  *
  * @param progressCallback - 可选的进度回调函数，用于报告检查进度
+ * @param cancellationToken - 可选的取消令牌，用于支持取消操作
  * @returns 检查结果
  */
 export async function checkAllFiles(
-  progressCallback?: (message: string) => void
+  progressCallback?: (message: string) => void,
+  cancellationToken?: vscode.CancellationToken
 ): Promise<CheckAllResult> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
@@ -218,6 +220,13 @@ export async function checkAllFiles(
 
     // 逐个检查文件
     for (const fileUri of files) {
+      // 检查是否已取消
+      if (cancellationToken?.isCancellationRequested) {
+        result.success = false;
+        result.errorMessage = "检查已被用户取消";
+        break;
+      }
+
       const relativePath = vscode.workspace.asRelativePath(fileUri, false);
 
       // 文件白名单：被标记为白名单的文件直接跳过
@@ -321,6 +330,12 @@ export async function checkAllFiles(
 
       // 检查每个函数，应用函数/返回类型/主函数白名单规则
       for (const funcInfo of parseResult.functions) {
+        // 检查是否已取消
+        if (cancellationToken?.isCancellationRequested) {
+          result.success = false;
+          result.errorMessage = "检查已被用户取消";
+          break;
+        }
         if (shouldSkipFunction(funcInfo, settings)) {
           continue;
         }
@@ -399,6 +414,13 @@ export async function checkAllFiles(
         result.errorMessage = "已达到最大问题数量限制（1000），停止检查";
         break;
       }
+
+      // 再次检查是否已取消（在文件处理完成后）
+      if (cancellationToken?.isCancellationRequested) {
+        result.success = false;
+        result.errorMessage = "检查已被用户取消";
+        break;
+      }
     }
   } catch (error) {
     result.success = false;
@@ -437,71 +459,118 @@ function hasFunctionBodyChangedIgnoringWhitespaceAndComments(
  *
  * @param webview - 可选的 webview 实例，用于回传结果到前端
  */
-export async function runProjectCheck(webview?: vscode.Webview): Promise<void> {
+export async function runProjectCheck(
+  webview?: vscode.Webview,
+  cancellationToken?: vscode.CancellationToken
+): Promise<void> {
   // 显示进度提示
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: "Doc-Doctor 项目检查",
-      cancellable: false,
+      cancellable: true,
     },
-    async (progress) => {
+    async (progress, token) => {
       progress.report({ message: "正在扫描工作区..." });
 
-      const result = await checkAllFiles((message) => {
-        progress.report({ message });
-      });
+      // 使用传入的 cancellationToken 或使用 withProgress 提供的 token
+      const checkToken = cancellationToken || token;
 
-      // 显示结果摘要
-      if (!result.success) {
-        vscode.window.showErrorMessage(`检查失败: ${result.errorMessage}`);
-      } else if (result.problems.length === 0) {
-        vscode.window.showInformationMessage(
-          `项目目前不存在相关问题噢！\n已检查 ${result.checkedFiles}/${result.totalFiles} 个文件`
-        );
-      } else {
-        vscode.window.showInformationMessage(
-          `检查完成！共发现 ${result.problems.length} 个问题\n已检查 ${result.checkedFiles}/${result.totalFiles} 个文件`
-        );
-      }
+      // 记录开始时间，用于检查耗时提示
+      const startTime = Date.now();
+      const TIMEOUT_THRESHOLD = 30000; // 30秒
+      let timeoutWarningShown = false;
 
-      // 如果有 webview，回传结果
-      if (webview) {
-        if (result.gitMessage) {
-          webview.postMessage({ type: "log", message: result.gitMessage });
+      // 设置超时检查
+      const timeoutCheck = setInterval(() => {
+        if (!timeoutWarningShown && !checkToken.isCancellationRequested) {
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= TIMEOUT_THRESHOLD) {
+            timeoutWarningShown = true;
+            const message = `检查已进行 ${Math.floor(elapsed / 1000)} 秒，耗时较长。您可以通过"取消检查"按钮终止本次检查。`;
+            vscode.window.showWarningMessage(message);
+            if (webview) {
+              webview.postMessage({
+                type: "log",
+                message: message,
+              });
+            }
+          }
         }
-        webview.postMessage({
-          type: "projectCheckResult",
-          result,
-        });
-      }
+      }, 5000); // 每5秒检查一次
 
-      // 记录最近一次检查的问题列表，供调试功能使用
-      if (result.success) {
-        setLastProblemsForDebug(result.problems);
+      try {
+        const result = await checkAllFiles((message) => {
+          progress.report({ message });
+        }, checkToken);
 
-        // 自动将本次检查结果写入数据库，并输出提示
-        try {
-          const saveResult = await saveProblemsToDBBatch(result.problems);
-          const prefix =
-            result.problems.length > 0
-              ? "检查结果已保存到数据库："
-              : "数据库已同步为空结果：";
+        // 显示结果摘要
+        if (!result.success) {
+          vscode.window.showErrorMessage(`检查失败: ${result.errorMessage}`);
+        } else if (result.problems.length === 0) {
+          vscode.window.showInformationMessage(
+            `项目目前不存在相关问题噢！\n已检查 ${result.checkedFiles}/${result.totalFiles} 个文件`
+          );
+        } else {
+          vscode.window.showInformationMessage(
+            `检查完成！共发现 ${result.problems.length} 个问题\n已检查 ${result.checkedFiles}/${result.totalFiles} 个文件`
+          );
+        }
 
-          vscode.window.showInformationMessage(prefix + saveResult.message);
+        // 如果有 webview，回传结果
+        if (webview) {
+          if (result.gitMessage) {
+            webview.postMessage({ type: "log", message: result.gitMessage });
+          }
+          webview.postMessage({
+            type: "projectCheckResult",
+            result,
+          });
+        }
 
+        // 记录最近一次检查的问题列表，供调试功能使用
+        if (result.success) {
+          setLastProblemsForDebug(result.problems);
+
+          // 自动将本次检查结果写入数据库，并输出提示
+          try {
+            const saveResult = await saveProblemsToDBBatch(result.problems);
+            const prefix =
+              result.problems.length > 0
+                ? "检查结果已保存到数据库："
+                : "数据库已同步为空结果：";
+
+            vscode.window.showInformationMessage(prefix + saveResult.message);
+
+            if (webview) {
+              webview.postMessage({
+                type: "databaseSaveResult",
+                result: saveResult,
+              });
+            }
+          } catch (e) {
+            console.error("[Doc-Doctor] 自动保存检查结果到数据库失败:", e);
+          }
+        }
+
+        // 显示总耗时
+        const totalTime = Date.now() - startTime;
+        if (totalTime >= 1000) {
+          // 超过1秒才显示耗时
+          const timeMessage = `检查完成，耗时 ${(totalTime / 1000).toFixed(1)} 秒`;
           if (webview) {
             webview.postMessage({
-              type: "databaseSaveResult",
-              result: saveResult,
+              type: "log",
+              message: timeMessage,
             });
           }
-        } catch (e) {
-          console.error("[Doc-Doctor] 自动保存检查结果到数据库失败:", e);
         }
-      }
 
-      return result;
+        return result;
+      } finally {
+        // 清理超时检查
+        clearInterval(timeoutCheck);
+      }
     }
   );
 }

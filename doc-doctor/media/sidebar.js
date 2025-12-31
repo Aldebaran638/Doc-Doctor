@@ -11,6 +11,9 @@
   const problemListEl = document.getElementById('problem-list');
   const searchInput = document.getElementById('search-input');
   const typeFilter = document.getElementById('type-filter');
+  const panelsEl = document.querySelector('vscode-panels');
+  const panelTabs = Array.from(document.querySelectorAll('vscode-panel-tab'));
+  const panelViews = Array.from(document.querySelectorAll('vscode-panel-view'));
 
   // 设置相关元素
   const settingCheckMain = document.getElementById('setting-check-main');
@@ -25,9 +28,240 @@
   let currentSource = 'none';
   let currentSummary = '';
   let isChecking = false;
+  let tabDebugCount = 0;
+  const TAB_DEBUG_LIMIT = 120;
+
+  function logTabDebug(message) {
+    if (tabDebugCount >= TAB_DEBUG_LIMIT) {
+      return;
+    }
+    tabDebugCount += 1;
+    const line = '[TabDebug] ' + message;
+    appendLog(line);
+    // 在 Webview 控制台也输出，便于定位点击/布局问题
+    console.log(line);
+    vscode.postMessage({ type: 'tabDebug', message: line });
+    if (tabDebugCount === TAB_DEBUG_LIMIT) {
+      appendLog('[TabDebug] 日志数量已达上限，后续将停止输出。');
+      vscode.postMessage({
+        type: 'tabDebug',
+        message: '[TabDebug] log limit reached'
+      });
+    }
+  }
+
+  function logPanelsState(reason) {
+    if (!panelsEl) {
+      logTabDebug(reason + ' - 未找到 vscode-panels');
+      return;
+    }
+    const activeId = panelsEl.getAttribute('activeid');
+    const orientation = panelsEl.getAttribute('orientation');
+    const rect = panelsEl.getBoundingClientRect();
+    logTabDebug(
+      reason +
+        ' activeid=' +
+        (activeId || 'null') +
+        ' orientation=' +
+        (orientation || 'default') +
+        ' panels=' +
+        Math.round(rect.width) +
+        'x' +
+        Math.round(rect.height)
+    );
+    if (reason.indexOf('tab-click') !== -1 || reason.indexOf('activeid-changed') !== -1) {
+      panelViews.forEach(function (view) {
+        const viewRect = view.getBoundingClientRect();
+        const viewStyle = window.getComputedStyle(view);
+        logTabDebug(
+          'view ' +
+            (view.id || '(no-id)') +
+            ' hidden=' +
+            (view.hasAttribute('hidden') ? 'yes' : 'no') +
+            ' display=' +
+            viewStyle.display +
+            ' w=' +
+            Math.round(viewRect.width) +
+            ' h=' +
+            Math.round(viewRect.height)
+        );
+      });
+      panelTabs.forEach(function (tab) {
+        const tabRect = tab.getBoundingClientRect();
+        const style = window.getComputedStyle(tab);
+        logTabDebug(
+          'tab ' +
+            (tab.id || '(no-id)') +
+            ' text="' +
+            (tab.textContent || '').trim() +
+            '" w=' +
+            Math.round(tabRect.width) +
+            ' h=' +
+            Math.round(tabRect.height) +
+            ' cw=' +
+            tab.clientWidth +
+            ' sw=' +
+            tab.scrollWidth +
+            ' display=' +
+            style.display +
+            ' whiteSpace=' +
+            style.whiteSpace +
+            ' writingMode=' +
+            style.writingMode +
+            ' flex=' +
+            style.flex
+        );
+      });
+    }
+  }
+
+  // 调整标签栏位置，使其与内容区域左侧对齐
+  function alignTabsWithContent() {
+    if (!panelsEl) {
+      return;
+    }
+    
+    // 尝试多种方式查找标签栏容器
+    const shadowRoot = panelsEl.shadowRoot;
+    const tabContainer = (shadowRoot && shadowRoot.querySelector('[role="tablist"]')) ||
+                         (shadowRoot && shadowRoot.querySelector('.tabs')) ||
+                         (shadowRoot && shadowRoot.querySelector('div:first-child')) ||
+                         panelsEl.querySelector('[role="tablist"]') ||
+                         panelsEl.querySelector('.tabs');
+    
+    if (tabContainer) {
+      tabContainer.style.paddingLeft = '16px';
+      tabContainer.style.boxSizing = 'border-box';
+      logTabDebug('标签栏对齐：已找到容器并设置 padding-left');
+    } else {
+      // 如果找不到容器，直接调整第一个标签的 margin
+      if (panelTabs.length > 0) {
+        panelTabs[0].style.marginLeft = '16px';
+        logTabDebug('标签栏对齐：使用第一个标签的 margin-left');
+      } else {
+        logTabDebug('标签栏对齐：未找到标签栏容器或标签');
+      }
+    }
+  }
+
+  // 移除标签下划线，使用其他方式突出活动标签
+  function removeTabUnderlines() {
+    if (!panelsEl) {
+      return;
+    }
+    
+    // 在 Shadow DOM 中添加样式来移除下划线
+    if (panelsEl.shadowRoot) {
+      let styleSheet = panelsEl.shadowRoot.querySelector('style[data-remove-underline]');
+      if (!styleSheet) {
+        styleSheet = document.createElement('style');
+        styleSheet.setAttribute('data-remove-underline', 'true');
+        styleSheet.textContent = `
+          vscode-panel-tab,
+          vscode-panel-tab *,
+          [role="tab"],
+          [role="tab"] * {
+            border-bottom: none !important;
+            text-decoration: none !important;
+            box-shadow: none !important;
+          }
+          vscode-panel-tab::before,
+          vscode-panel-tab::after,
+          [role="tab"]::before,
+          [role="tab"]::after {
+            display: none !important;
+            border-bottom: none !important;
+            content: none !important;
+          }
+          /* 移除所有可能的底部边框 */
+          [role="tablist"] > * {
+            border-bottom: none !important;
+          }
+        `;
+        panelsEl.shadowRoot.appendChild(styleSheet);
+        logTabDebug('标签下划线：已在 Shadow DOM 中添加样式移除下划线');
+      }
+    }
+    
+    // 直接操作标签元素，移除下划线
+    panelTabs.forEach(function(tab) {
+      tab.style.borderBottom = 'none';
+      tab.style.setProperty('border-bottom', 'none', 'important');
+      tab.style.textDecoration = 'none';
+      
+      // 如果标签有 Shadow DOM，也在其中移除
+      if (tab.shadowRoot) {
+        const tabElements = tab.shadowRoot.querySelectorAll('*');
+        tabElements.forEach(function(el) {
+          el.style.borderBottom = 'none';
+          el.style.textDecoration = 'none';
+        });
+      }
+    });
+  }
 
   // Webview 加载完成后主动向扩展请求当前配置，用于初始化设置页
   vscode.postMessage({ type: 'requestSettings' });
+
+  // Tab 相关调试日志，定位布局/点击问题
+  logTabDebug(
+    'customElements vscode-panels defined=' +
+      (customElements.get('vscode-panels') ? 'yes' : 'no')
+  );
+  if (panelTabs.length !== panelViews.length) {
+    logTabDebug(
+      'tabs/views 数量不匹配 tabs=' +
+        panelTabs.length +
+        ' views=' +
+        panelViews.length
+    );
+  }
+  logPanelsState('init');
+  if (panelsEl) {
+    const observer = new MutationObserver(function (mutations) {
+      const changed = mutations.some(function (m) {
+        return m.type === 'attributes' && m.attributeName === 'activeid';
+      });
+      if (changed) {
+        logPanelsState('activeid-changed');
+        // 标签切换时移除下划线
+        setTimeout(function() {
+          removeTabUnderlines();
+        }, 50);
+      }
+    });
+    observer.observe(panelsEl, {
+      attributes: true,
+      attributeFilter: ['activeid']
+    });
+    
+    // 延迟调整标签栏位置和移除下划线，确保 Web Components 已完全初始化
+    setTimeout(function() {
+      alignTabsWithContent();
+      removeTabUnderlines();
+    }, 100);
+    
+    // 监听 DOM 变化，如果标签栏结构发生变化，重新调整
+    const tabsObserver = new MutationObserver(function() {
+      alignTabsWithContent();
+      removeTabUnderlines();
+    });
+    if (panelsEl.shadowRoot) {
+      tabsObserver.observe(panelsEl.shadowRoot, { childList: true, subtree: true });
+    }
+    tabsObserver.observe(panelsEl, { childList: true, subtree: true });
+    
+    panelsEl.addEventListener('click', function (e) {
+      const target = e.target instanceof Element ? e.target : null;
+      const tab = target ? target.closest('vscode-panel-tab') : null;
+      logPanelsState('panels-click' + (tab ? ':' + tab.id : ''));
+    });
+  }
+  panelTabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      logPanelsState('tab-click:' + (tab.id || 'no-id'));
+    });
+  });
 
   // 1. 检查单个文件按钮
   if (btn) {
@@ -164,6 +398,17 @@
       case 'checkCancelled':
         setCheckingState(false);
         appendLog('检查已取消');
+        break;
+      case 'aiFixPreview':
+        showAIFixPreview(message.data);
+        break;
+      case 'aiFixApplied':
+        appendLog('✅ AI修复已应用到文件');
+        // 可选：刷新问题列表
+        break;
+      case 'aiFixError':
+        appendLog('❌ AI修复失败: ' + (message.message || '未知错误'));
+        hideAIFixLoading();
         break;
     }
   });
@@ -451,6 +696,20 @@
       card.appendChild(file);
       card.appendChild(desc);
 
+      // AI修复按钮（仅对问题类型1/2/3/4显示）
+      const problemTypeNum = Number(p.problemType);
+      if (problemTypeNum >= 1 && problemTypeNum <= 4) {
+        const aiFixBtn = document.createElement('button');
+        aiFixBtn.className = 'ai-fix-btn';
+        aiFixBtn.textContent = 'AI修复注释';
+        aiFixBtn.title = '使用AI生成或更新注释';
+        aiFixBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          handleAIFixClick(p);
+        });
+        card.appendChild(aiFixBtn);
+      }
+
       // 点击跳转
       card.addEventListener('click', function () {
         const filePath = p.filePath;
@@ -499,5 +758,267 @@
       return p.id;
     }
     return (p.filePath || '') + ':' + (p.lineNumber || 0) + ':' + (p.functionName || '');
+  }
+
+  // AI修复相关函数
+  let aiFixLoading = false;
+  let currentAIFixProblem = null;
+
+  function handleAIFixClick(problem) {
+    if (aiFixLoading) {
+      appendLog('AI修复请求正在进行中，请稍候...');
+      return;
+    }
+
+    currentAIFixProblem = problem;
+    aiFixLoading = true;
+    appendLog('正在请求AI生成注释...');
+
+    // 发送AI修复请求
+    vscode.postMessage({
+      type: 'aiFixComment',
+      data: { problem: problem }
+    });
+  }
+
+  function showAIFixPreview(data) {
+    aiFixLoading = false;
+    const problem = data.problem;
+    const newComment = data.newComment;
+
+    // 创建预览模态框
+    const modal = document.createElement('div');
+    modal.className = 'ai-fix-modal';
+    modal.innerHTML = `
+      <div class="ai-fix-modal-content">
+        <div class="ai-fix-modal-header">
+          <h3>AI修复注释预览</h3>
+          <button class="ai-fix-close-btn" onclick="this.closest('.ai-fix-modal').remove()">×</button>
+        </div>
+        <div class="ai-fix-modal-body">
+          <div class="ai-fix-section">
+            <h4>函数信息</h4>
+            <p><strong>函数名:</strong> ${problem.functionName || '(未知)'}</p>
+            <p><strong>文件:</strong> ${problem.filePath || '(未知)'}</p>
+            <p><strong>行号:</strong> ${problem.lineNumber || '?'}</p>
+          </div>
+          <div class="ai-fix-section">
+            <h4>新注释内容</h4>
+            <pre class="ai-fix-comment-preview">${escapeHtml(newComment)}</pre>
+          </div>
+        </div>
+        <div class="ai-fix-modal-footer">
+          <button class="ai-fix-cancel-btn" onclick="this.closest('.ai-fix-modal').remove()">取消</button>
+          <button class="ai-fix-apply-btn" onclick="applyAIFix()">应用修改</button>
+        </div>
+      </div>
+    `;
+
+    // 添加样式
+    if (!document.getElementById('ai-fix-modal-style')) {
+      const style = document.createElement('style');
+      style.id = 'ai-fix-modal-style';
+      style.textContent = `
+        .ai-fix-modal {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+        .ai-fix-modal-content {
+          background: var(--vscode-editor-background);
+          border: 1px solid var(--vscode-widget-border);
+          border-radius: 12px;
+          width: 100%;
+          max-width: 700px;
+          max-height: 85vh;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .ai-fix-modal-header {
+          padding: 20px 24px;
+          border-bottom: 1px solid var(--vscode-widget-border);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .ai-fix-modal-header h3 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 600;
+        }
+        .ai-fix-close-btn {
+          background: none;
+          border: none;
+          font-size: 28px;
+          cursor: pointer;
+          color: var(--vscode-foreground);
+          padding: 0;
+          width: 32px;
+          height: 32px;
+          line-height: 1;
+          border-radius: 4px;
+          transition: background 0.2s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .ai-fix-close-btn:hover {
+          background: var(--vscode-list-hoverBackground);
+        }
+        .ai-fix-modal-body {
+          padding: 24px;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .ai-fix-section {
+          margin-bottom: 24px;
+        }
+        .ai-fix-section:last-child {
+          margin-bottom: 0;
+        }
+        .ai-fix-section h4 {
+          margin: 0 0 12px 0;
+          font-size: 15px;
+          font-weight: 600;
+          padding-bottom: 8px;
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        .ai-fix-section p {
+          margin: 8px 0;
+          font-size: 13px;
+          line-height: 1.6;
+        }
+        .ai-fix-comment-preview {
+          background: var(--vscode-textCodeBlock-background);
+          padding: 16px;
+          border-radius: 6px;
+          overflow-x: auto;
+          font-family: var(--vscode-editor-font-family);
+          font-size: 13px;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          line-height: 1.6;
+          border: 1px solid var(--vscode-widget-border);
+          margin-top: 8px;
+        }
+        .ai-fix-modal-footer {
+          padding: 20px 24px;
+          border-top: 1px solid var(--vscode-widget-border);
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+        }
+        .ai-fix-cancel-btn, .ai-fix-apply-btn {
+          padding: 10px 20px;
+          border: 1px solid var(--vscode-widget-border);
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          transition: all 0.2s ease;
+        }
+        .ai-fix-cancel-btn {
+          background: var(--vscode-button-secondaryBackground);
+          color: var(--vscode-button-secondaryForeground);
+        }
+        .ai-fix-cancel-btn:hover {
+          background: var(--vscode-button-secondaryHoverBackground);
+          transform: translateY(-1px);
+        }
+        .ai-fix-apply-btn {
+          background: var(--vscode-button-background);
+          color: var(--vscode-button-foreground);
+        }
+        .ai-fix-apply-btn:hover {
+          background: var(--vscode-button-hoverBackground);
+          transform: translateY(-1px);
+        }
+        .ai-fix-btn {
+          margin-top: 12px;
+          padding: 8px 12px;
+          font-size: 12px;
+          background: var(--vscode-button-secondaryBackground);
+          color: var(--vscode-button-secondaryForeground);
+          border: 1px solid var(--vscode-widget-border);
+          border-radius: 6px;
+          cursor: pointer;
+          width: 100%;
+          transition: all 0.2s ease;
+          font-weight: 500;
+        }
+        .ai-fix-btn:hover {
+          background: var(--vscode-button-secondaryHoverBackground);
+          transform: translateY(-1px);
+        }
+        .ai-fix-btn:active {
+          transform: translateY(0);
+        }
+        @media (max-width: 600px) {
+          .ai-fix-modal {
+            padding: 10px;
+          }
+          .ai-fix-modal-content {
+            max-height: 90vh;
+          }
+          .ai-fix-modal-header {
+            padding: 16px;
+          }
+          .ai-fix-modal-body {
+            padding: 16px;
+          }
+          .ai-fix-modal-footer {
+            padding: 16px;
+            flex-direction: column-reverse;
+          }
+          .ai-fix-cancel-btn, .ai-fix-apply-btn {
+            width: 100%;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // 添加应用修改函数到全局
+    window.applyAIFix = function() {
+      if (!currentAIFixProblem) {
+        return;
+      }
+      const modal = document.querySelector('.ai-fix-modal');
+      const newComment = modal.querySelector('.ai-fix-comment-preview').textContent;
+      
+      vscode.postMessage({
+        type: 'applyAIFix',
+        data: {
+          problem: currentAIFixProblem,
+          newComment: newComment
+        }
+      });
+
+      modal.remove();
+      currentAIFixProblem = null;
+      appendLog('正在应用AI修复...');
+    };
+
+    document.body.appendChild(modal);
+  }
+
+  function hideAIFixLoading() {
+    aiFixLoading = false;
+    currentAIFixProblem = null;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 })();
